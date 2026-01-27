@@ -12,3 +12,4 @@ RUN npm run build || echo "no build step"
 EXPOSE 3000
 
 CMD ["npm", "start"]
+
