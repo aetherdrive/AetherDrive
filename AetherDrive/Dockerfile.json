@@ -1,0 +1,21 @@
+# Bruk nyeste Node.js som base
+FROM node:20
+
+# Sett arbeidsmappe i containeren
+WORKDIR /app
+
+# Kopier package.json og package-lock.json først og installer dependencies
+COPY package*.json ./
+RUN npm install
+
+# Kopier resten av prosjektet
+COPY . .
+
+# Bygg prosjektet (hvis det trengs)
+RUN npm run build
+
+# Eksponer porten appen kjører på (vanligvis 3000)
+EXPOSE 3000
+
+# Start appen
+CMD ["npm", "start"]
