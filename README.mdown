@@ -1,0 +1,6 @@
+# AetherDrive V3+ Ultimate
+
+- Backend: Node.js + Express (HR, lønn, årlig lønnsøkning, metrics)
+- Frontend: Static HTML dashboard
+- AI microservice: Flask dummy
+- Klar for Render deploy (Backend, Frontend, AI-service)
