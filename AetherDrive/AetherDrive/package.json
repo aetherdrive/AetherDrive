@@ -7,7 +7,7 @@
     "start": "node src/engine.js",
     "test": "node tests/engine.test.js"
   },
-  "author": "Ditt Navn",
+  "author": "Marcus Andre Nilsen",
   "license": "MIT",
   "dependencies": {},
   "devDependencies": {}
