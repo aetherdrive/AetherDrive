@@ -67,6 +67,12 @@ function renderMetrics(data) {
   }
 }
 
+const API_BASE_URL = 'https://aetherdrive.onrender.com';
+
+function buildUrl(path) {
+  return `${API_BASE_URL}${path}`;
+}
+
 async function fetchMetrics() {
   if (document.hidden) {
     scheduleNext();
@@ -77,7 +83,7 @@ async function fetchMetrics() {
   }
   activeController = new AbortController();
   try {
-    const res = await fetch('/api/metrics', { signal: activeController.signal });
+    const res = await fetch(buildUrl('/api/metrics'), { signal: activeController.signal });
     if (!res.ok) {
       throw new Error(`Ugyldig svar: ${res.status}`);
     }
