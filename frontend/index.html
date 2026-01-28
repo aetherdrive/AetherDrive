@@ -8,29 +8,56 @@
   body { font-family: Arial; padding: 2rem; background: #f0f2f5; color: #333; }
   h1 { color: #0077cc; }
   .card { background: #fff; padding: 1rem 2rem; margin: 1rem 0; border-radius: 10px; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 1rem; }
+  .muted { color: #667085; font-size: 0.9rem; }
+  .stat { font-size: 1.4rem; font-weight: 600; }
+  .list { margin: 0.5rem 0 0; padding-left: 1.2rem; }
+  .pill { display: inline-block; padding: 0.1rem 0.6rem; border-radius: 999px; background: #e6f0ff; color: #1b4db3; font-size: 0.8rem; margin-left: 0.35rem; }
 </style>
 </head>
 <body>
 <h1>AetherDrive V3 Dashboard</h1>
 
-<div class="card"><strong>Status:</strong> <span id="status">Laster...</span></div>
-<div class="card"><strong>Antall brukere:</strong> <span id="users">0</span></div>
-<div class="card"><strong>Månedlig inntekt:</strong> <span id="revenue">0 NOK</span></div>
-<div class="card">
-  <strong>Ansatte og lønn:</strong>
-  <ul id="employee-salaries"></ul>
+<div class="grid">
+  <div class="card">
+    <div class="muted">Status</div>
+    <div class="stat" id="status">Laster...</div>
+    <div class="muted">Sist oppdatert: <span id="generated-at">-</span></div>
+  </div>
+  <div class="card">
+    <div class="muted">Antall brukere</div>
+    <div class="stat" id="users">0</div>
+  </div>
+  <div class="card">
+    <div class="muted">Månedlig inntekt</div>
+    <div class="stat" id="revenue">0 NOK</div>
+  </div>
 </div>
+
 <div class="card">
-  <strong>Import status:</strong>
-  <div>Sist import: <span id="last-import">-</span></div>
-  <div>Accepted: <span id="import-accepted">0</span></div>
-  <div>Duplicates: <span id="import-duplicates">0</span></div>
-  <div>Rejected: <span id="import-rejected">0</span></div>
+  <strong>Ansatte og lønn</strong>
+  <div class="muted">Total lønn per ansatt (inkl. flere jobber).</div>
+  <ul id="employee-salaries" class="list"></ul>
 </div>
-<div class="card">
-  <strong>Integration:</strong>
-  <div>Endpoint: <span id="integration-endpoint">-</span></div>
-  <div>Key: <span id="integration-key">-</span></div>
+
+<div class="grid">
+  <div class="card">
+    <strong>Import status</strong>
+    <div class="muted">Sist import: <span id="last-import">-</span></div>
+    <div class="stat">
+      <span id="import-accepted">0</span>
+      <span class="pill">Accepted</span>
+    </div>
+    <div class="muted">Duplicates: <span id="import-duplicates">0</span></div>
+    <div class="muted">Rejected: <span id="import-rejected">0</span></div>
+  </div>
+  <div class="card">
+    <strong>Integration</strong>
+    <div class="muted">Endpoint</div>
+    <div id="integration-endpoint">-</div>
+    <div class="muted" style="margin-top: 0.5rem;">Key</div>
+    <div id="integration-key">-</div>
+  </div>
 </div>
 
 <script>
@@ -39,6 +66,7 @@ const elements = {
   users: document.getElementById('users'),
   revenue: document.getElementById('revenue'),
   employeeList: document.getElementById('employee-salaries'),
+  generatedAt: document.getElementById('generated-at'),
   lastImport: document.getElementById('last-import'),
   importAccepted: document.getElementById('import-accepted'),
   importDuplicates: document.getElementById('import-duplicates'),
@@ -59,7 +87,8 @@ function snapshotKey(data) {
     currency: data.currency,
     employees: data.employees,
     importStatus: data.importStatus,
-    integration: data.integration
+    integration: data.integration,
+    generatedAt: data.generatedAt
   });
 }
 
@@ -69,6 +98,7 @@ function renderMetrics(data) {
   lastSnapshot = key;
 
   elements.status.textContent = data.status || 'Live';
+  elements.generatedAt.textContent = data.generatedAt || '-';
   elements.users.textContent = data.users || 0;
   const currency = data.currency || 'NOK';
   elements.revenue.textContent = Number.isFinite(data.revenue)
@@ -80,7 +110,8 @@ function renderMetrics(data) {
     const fragment = document.createDocumentFragment();
     data.employees.forEach((emp) => {
       const li = document.createElement('li');
-      li.textContent = `${emp.name}: ${emp.currentSalary.toLocaleString()} NOK`;
+      const jobLabel = emp.jobCount ? ` (${emp.jobCount} jobber)` : '';
+      li.textContent = `${emp.name}${jobLabel}: ${emp.currentSalary.toLocaleString()} NOK`;
       fragment.appendChild(li);
     });
     elements.employeeList.appendChild(fragment);
