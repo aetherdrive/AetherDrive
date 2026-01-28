@@ -4,7 +4,7 @@ import engine from "./engine.js";
 import fs from "fs";
 import path from "path";
 
-const POLICY_PATH = path.resolve("backend/config/policy.json");
+const POLICY_PATH = path.resolve("config/policy.json");
 const policy = JSON.parse(fs.readFileSync(POLICY_PATH, "utf8"));
 
 
