@@ -194,6 +194,7 @@ function buildMetrics() {
   const employees = loadEmployees();
   const input = { employees };
   const engineData = engine.run(input, now, policy);
+  const realImportStatus = loadImportStatus();
   const importStatus = loadImportStatus() || engineData.importStatus;
 
 
