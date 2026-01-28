@@ -1,6 +1,13 @@
 import express from "express";
 import engine from "./engine.js";
 
+import fs from "fs";
+import path from "path";
+
+const POLICY_PATH = path.resolve("backend/config/policy.json");
+const policy = JSON.parse(fs.readFileSync(POLICY_PATH, "utf8"));
+
+
 const app = express();
 const PORT = process.env.PORT || 10000;
 const INTEGRATION_ENDPOINT =
@@ -64,8 +71,7 @@ app.get("/health", (req, res) => {
 });
 
 app.get("/api/metrics", (req, res) => {
-  res.set("Cache-Control", "public, max-age=2, stale-while-revalidate=8");
-  res.json(getMetrics());
+  res.json(engine.run(new Date(), policy));
 });
 
 app.get("/api/integration", (req, res) => {
