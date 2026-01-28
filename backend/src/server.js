@@ -176,6 +176,8 @@ const events = Array.isArray(body.events) ? body.events : [];
   return res.json({ ok: true, ...status });
 });
 
+
+
 app.get("/api/time-events/status", (req, res) => {
   const status = loadImportStatus();
   res.json(
@@ -183,6 +185,152 @@ app.get("/api/time-events/status", (req, res) => {
   );
 });
 
+function parseDateOnlyToUtcIso(dateStr, endOfDay = false) {
+  // dateStr: "YYYY-MM-DD"
+  const [y, m, d] = String(dateStr).split("-").map(Number);
+  if (!y || !m || !d) return null;
+  const dt = endOfDay
+    ? new Date(Date.UTC(y, m - 1, d, 23, 59, 59, 999))
+    : new Date(Date.UTC(y, m - 1, d, 0, 0, 0, 0));
+  return dt.toISOString();
+}
+
+function filterEvents(events, { employeeRef, fromIso, toIso }) {
+  return events.filter((e) => {
+    if (employeeRef && String(e.employeeRef) !== String(employeeRef)) return false;
+    if (fromIso && String(e.occurredAt) < fromIso) return false;
+    if (toIso && String(e.occurredAt) > toIso) return false;
+    return true;
+  });
+}
+
+function groupByLocalDateUTC(iso) {
+  // Since policy timezone is UTC currently, we group by YYYY-MM-DD in UTC.
+  // Later: implement timezone conversion based on policy.locale.timezone.
+  return iso.slice(0, 10);
+}
+
+function summarizeEmployeeEvents(events) {
+  // Events are expected sorted by occurredAt asc
+  let openIn = null; // { at, deviceId, source, externalId }
+  let openBreak = null;
+
+  const shifts = []; // { inAt, outAt, workMs, breakMs, anomalies: [] }
+  const anomalies = []; // global anomalies
+  let breakMsAcc = 0;
+
+  for (const ev of events) {
+    const type = String(ev.type || "").toUpperCase();
+
+    if (type === "IN") {
+      if (openIn) {
+        anomalies.push({ type: "DOUBLE_IN", at: ev.occurredAt, details: "IN received while already IN" });
+      } else {
+        openIn = { at: ev.occurredAt };
+        breakMsAcc = 0;
+        openBreak = null;
+      }
+      continue;
+    }
+
+    if (type === "OUT") {
+      if (!openIn) {
+        anomalies.push({ type: "OUT_WITHOUT_IN", at: ev.occurredAt });
+        continue;
+      }
+      if (openBreak) {
+        anomalies.push({ type: "OPEN_BREAK_AT_OUT", at: ev.occurredAt });
+        openBreak = null;
+      }
+
+      const inAt = new Date(openIn.at).getTime();
+      const outAt = new Date(ev.occurredAt).getTime();
+
+      if (!Number.isFinite(inAt) || !Number.isFinite(outAt) || outAt <= inAt) {
+        anomalies.push({ type: "INVALID_SHIFT_RANGE", inAt: openIn.at, outAt: ev.occurredAt });
+      } else {
+        const totalMs = outAt - inAt;
+        const workMs = Math.max(0, totalMs - breakMsAcc);
+
+        shifts.push({
+          inAt: openIn.at,
+          outAt: ev.occurredAt,
+          totalMs,
+          breakMs: breakMsAcc,
+          workMs
+        });
+      }
+
+      openIn = null;
+      breakMsAcc = 0;
+      openBreak = null;
+      continue;
+    }
+
+    if (type === "BREAK_START") {
+      if (!openIn) {
+        anomalies.push({ type: "BREAK_START_WITHOUT_IN", at: ev.occurredAt });
+        continue;
+      }
+      if (openBreak) {
+        anomalies.push({ type: "DOUBLE_BREAK_START", at: ev.occurredAt });
+        continue;
+      }
+      openBreak = { at: ev.occurredAt };
+      continue;
+    }
+
+    if (type === "BREAK_END") {
+      if (!openIn) {
+        anomalies.push({ type: "BREAK_END_WITHOUT_IN", at: ev.occurredAt });
+        continue;
+      }
+      if (!openBreak) {
+        anomalies.push({ type: "BREAK_END_WITHOUT_START", at: ev.occurredAt });
+        continue;
+      }
+      const bs = new Date(openBreak.at).getTime();
+      const be = new Date(ev.occurredAt).getTime();
+      if (Number.isFinite(bs) && Number.isFinite(be) && be > bs) {
+        breakMsAcc += (be - bs);
+      } else {
+        anomalies.push({ type: "INVALID_BREAK_RANGE", start: openBreak.at, end: ev.occurredAt });
+      }
+      openBreak = null;
+      continue;
+    }
+
+    anomalies.push({ type: "UNKNOWN_EVENT_TYPE", at: ev.occurredAt, value: ev.type });
+  }
+
+  if (openIn) {
+    anomalies.push({ type: "MISSING_OUT", inAt: openIn.at });
+  }
+  if (openBreak) {
+    anomalies.push({ type: "MISSING_BREAK_END", breakStartAt: openBreak.at });
+  }
+
+  // Day summaries (UTC day buckets for now)
+  const byDay = {};
+  for (const s of shifts) {
+    const day = groupByLocalDateUTC(s.inAt);
+    if (!byDay[day]) byDay[day] = { day, shifts: 0, workMs: 0, breakMs: 0 };
+    byDay[day].shifts += 1;
+    byDay[day].workMs += s.workMs;
+    byDay[day].breakMs += s.breakMs;
+  }
+
+  const days = Object.values(byDay).sort((a, b) => a.day.localeCompare(b.day));
+
+  const totalWorkMs = shifts.reduce((acc, s) => acc + s.workMs, 0);
+  const totalBreakMs = shifts.reduce((acc, s) => acc + s.breakMs, 0);
+
+  return { shifts, days, totalWorkMs, totalBreakMs, anomalies };
+}
+
+function msToHours(ms) {
+  return Math.round((ms / 3600000) * 100) / 100; // 2 decimals
+}
 
 
 
@@ -282,6 +430,68 @@ app.get("/api/integration", (req, res) => {
     // key: INTEGRATION_KEY // DEMO ONLY – anbefalt å holde av
   });
 });
+
+app.get("/api/time-events", (req, res) => {
+  const employeeRef = req.query.employeeRef ? String(req.query.employeeRef) : null;
+
+  const from = req.query.from ? String(req.query.from) : null; // YYYY-MM-DD or ISO
+  const to = req.query.to ? String(req.query.to) : null;
+
+  const fromIso = from && from.length === 10 ? parseDateOnlyToUtcIso(from, false) : from;
+  const toIso = to && to.length === 10 ? parseDateOnlyToUtcIso(to, true) : to;
+
+  const all = loadTimeEvents().slice().sort((a, b) => String(a.occurredAt).localeCompare(String(b.occurredAt)));
+  const filtered = filterEvents(all, { employeeRef, fromIso, toIso });
+
+  res.json({
+    employeeRef,
+    from: fromIso || null,
+    to: toIso || null,
+    count: filtered.length,
+    events: filtered
+  });
+});
+
+app.get("/api/time/summary", (req, res) => {
+  const employeeRef = req.query.employeeRef ? String(req.query.employeeRef) : null;
+  const from = req.query.from ? String(req.query.from) : null; // YYYY-MM-DD
+  const to = req.query.to ? String(req.query.to) : null;       // YYYY-MM-DD
+
+  if (!employeeRef) return res.status(400).json({ ok: false, error: "employeeRef_required" });
+  if (!from || !to) return res.status(400).json({ ok: false, error: "from_to_required" });
+
+  const fromIso = from.length === 10 ? parseDateOnlyToUtcIso(from, false) : null;
+  const toIso = to.length === 10 ? parseDateOnlyToUtcIso(to, true) : null;
+
+  if (!fromIso || !toIso) return res.status(400).json({ ok: false, error: "invalid_date_format" });
+
+  const all = loadTimeEvents().slice().sort((a, b) => String(a.occurredAt).localeCompare(String(b.occurredAt)));
+  const filtered = filterEvents(all, { employeeRef, fromIso, toIso });
+
+  const summary = summarizeEmployeeEvents(filtered);
+
+  res.json({
+    ok: true,
+    employeeRef,
+    from: fromIso,
+    to: toIso,
+    eventCount: filtered.length,
+    totals: {
+      workHours: msToHours(summary.totalWorkMs),
+      breakHours: msToHours(summary.totalBreakMs),
+      shifts: summary.shifts.length,
+      anomalyCount: summary.anomalies.length
+    },
+    days: summary.days.map((d) => ({
+      day: d.day,
+      shifts: d.shifts,
+      workHours: msToHours(d.workMs),
+      breakHours: msToHours(d.breakMs)
+    })),
+    anomalies: summary.anomalies.slice(0, 100) // cap for safety
+  });
+});
+
 
 app.listen(PORT, () => {
   console.log(`Backend listening on port ${PORT}`);
