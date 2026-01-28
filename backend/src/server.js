@@ -7,80 +7,100 @@ import path from "path";
 const POLICY_PATH = path.resolve("config/policy.json");
 const policy = JSON.parse(fs.readFileSync(POLICY_PATH, "utf8"));
 
-
 const app = express();
 const PORT = process.env.PORT || 10000;
+
 const INTEGRATION_ENDPOINT =
   process.env.INTEGRATION_ENDPOINT || "https://aetherdrive.onrender.com/api/metrics";
-const INTEGRATION_KEY = process.env.INTEGRATION_KEY || "demo-key";
+const INTEGRATION_KEY = process.env.INTEGRATION_KEY || "demo-key"; // DEMO: ikke eksponer i prod
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "100kb" }));
+
+// CORS (enkelt nå, strammere senere)
 app.use((req, res, next) => {
   res.set("Access-Control-Allow-Origin", "*");
   res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.set("Access-Control-Allow-Headers", "Content-Type");
-  if (req.method === "OPTIONS") {
-    return res.sendStatus(204);
-  }
+  // Tillat også API key header for integrasjoner
+  res.set("Access-Control-Allow-Headers", "Content-Type, X-AETHERDRIVE-KEY, Authorization, X-API-Key");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
   return next();
 });
 
+// ---- Metrics cache ----
 let cachedMetrics = null;
 let cachedAt = 0;
 const CACHE_TTL_MS = 3000;
 
 function buildMetrics() {
   const now = new Date();
-  const engineData = engine.run(now);
+
+  // ✅ Policy injiseres her, så alle tall er policy-styrt
+  const engineData = engine.run(now, policy);
+
   return {
     status: engineData.status,
     users: engineData.users,
     revenue: engineData.monthlyRevenueNOK,
-    currency: "NOK",
+    currency: policy?.locale?.currency ?? "NOK",
     employees: engineData.employees,
     importStatus: engineData.importStatus,
+
+    // ✅ Explain hvis engine returnerer det (ryddet engine.js gjør det)
+    explain: engineData.explain,
+
     integration: {
-      endpoint: INTEGRATION_ENDPOINT,
-      key: INTEGRATION_KEY
+      endpoint: INTEGRATION_ENDPOINT
+      // 🚫 Ikke send key tilbake i prod (hold den server-side)
+      // key: INTEGRATION_KEY
     },
-    generatedAt: engineData.generatedAt
+
+    generatedAt: engineData.generatedAt ?? now.toISOString()
   };
 }
 
 function getMetrics() {
-  const now = Date.now();
-  if (!cachedMetrics || now - cachedAt > CACHE_TTL_MS) {
+  const nowMs = Date.now();
+  if (!cachedMetrics || nowMs - cachedAt > CACHE_TTL_MS) {
     cachedMetrics = buildMetrics();
-    cachedAt = now;
+    cachedAt = nowMs;
   }
   return cachedMetrics;
 }
 
+// Pre-warm cache i bakgrunnen
 setInterval(() => {
   cachedMetrics = buildMetrics();
   cachedAt = Date.now();
 }, CACHE_TTL_MS).unref();
 
+// ---- Routes ----
 app.get("/", (req, res) => {
   res.send("AetherDrive backend is running 🚀");
 });
 
 app.get("/health", (req, res) => {
-  res.json({ status: "ok", uptime: process.uptime() });
+  res.json({
+    status: "ok",
+    uptime: process.uptime(),
+    policyVersion: policy?.version ?? "none"
+  });
 });
 
+// ✅ Nå bruker /api/metrics cache (én sannhet)
 app.get("/api/metrics", (req, res) => {
-  res.json(engine.run(new Date(), policy));
+  res.json(getMetrics());
 });
 
+// Demo-only: vis endpoint (ikke key)
 app.get("/api/integration", (req, res) => {
   res.json({
-    endpoint: INTEGRATION_ENDPOINT,
-    key: INTEGRATION_KEY
+    endpoint: INTEGRATION_ENDPOINT
+    // key: INTEGRATION_KEY // DEMO ONLY – anbefalt å holde av
   });
 });
 
 app.listen(PORT, () => {
   console.log(`Backend listening on port ${PORT}`);
+  console.log(`Policy loaded from: ${POLICY_PATH} (version: ${policy?.version ?? "none"})`);
 });

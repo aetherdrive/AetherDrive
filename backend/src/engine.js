@@ -1,66 +1,167 @@
+/**
+ * AetherDrive Engine (policy-first)
+ * - Deterministic calculations (no I/O)
+ * - Policy injected by caller
+ * - Input can be provided (employees/jobs/events), with demo fallback
+ */
+
+function parseStartDate(startDate) {
+  const [year, month, day] = String(startDate).split("-").map(Number);
+  return { startYear: year, startMonth: month, startDay: day };
+}
+
+function withParsedJobDates(employees) {
+  return employees.map((employee) => ({
+    ...employee,
+    jobs: (employee.jobs || []).map((job) => ({
+      ...job,
+      ...parseStartDate(job.startDate)
+    }))
+  }));
+}
+
+function getDateParts(now, useUTC) {
+  return {
+    year: useUTC ? now.getUTCFullYear() : now.getFullYear(),
+    month: (useUTC ? now.getUTCMonth() : now.getMonth()) + 1,
+    day: useUTC ? now.getUTCDate() : now.getDate()
+  };
+}
+
+function yearsSince({ startYear, startMonth, startDay }, now, useUTC) {
+  const current = getDateParts(now, useUTC);
+
+  let years = current.year - startYear;
+  if (current.month < startMonth || (current.month === startMonth && current.day < startDay)) {
+    years -= 1;
+  }
+  return Math.max(0, years);
+}
+
+function calculateSalary(job, now, policy) {
+  const useUTC = policy?.payroll?.raiseAnniversary?.useUTC ?? true;
+  const years = yearsSince(job, now, useUTC);
+
+  const raiseModel = policy?.payroll?.raiseModel ?? "COMPOUND_ANNUAL";
+  let newSalary;
+
+  if (raiseModel === "COMPOUND_ANNUAL") {
+    newSalary = job.baseSalary * Math.pow(1 + job.annualIncrease, years);
+  } else {
+    // fallback: simple (non-compounded) annual raise
+    newSalary = job.baseSalary * (1 + job.annualIncrease * years);
+  }
+
+  const roundingMode = policy?.payroll?.rounding?.salary?.mode ?? "NEAREST_INT";
+  if (roundingMode === "NEAREST_INT") return Math.round(newSalary);
+  if (roundingMode === "FLOOR_INT") return Math.floor(newSalary);
+  if (roundingMode === "CEIL_INT") return Math.ceil(newSalary);
+
+  return Math.round(newSalary);
+}
+
+function buildImportStatus(now, policy) {
+  const src = policy?.importStatus?.source ?? "SIMULATED";
+  if (src !== "SIMULATED") {
+    // Placeholder: later you can plug real import status from DB/connector
+    return null;
+  }
+
+  const sim = policy?.importStatus?.simulated ?? {};
+  const minutesAgo = sim.minutesAgo ?? 15;
+  const lastImport = new Date(now.getTime() - minutesAgo * 60 * 1000);
+
+  return {
+    lastImportAt: lastImport.toISOString(),
+    accepted: sim.accepted ?? 128,
+    duplicates: sim.duplicates ?? 4,
+    rejected: sim.rejected ?? 2
+  };
+}
+
+function buildExplain(now, policy, inputSummary) {
+  return {
+    generatedAt: now.toISOString(),
+    policyUsed: {
+      version: policy?.version ?? "none",
+      timezone: policy?.locale?.timezone ?? "UTC",
+      currency: policy?.locale?.currency ?? "NOK",
+      raiseModel: policy?.payroll?.raiseModel ?? "COMPOUND_ANNUAL",
+      anniversaryUTC: policy?.payroll?.raiseAnniversary?.useUTC ?? true,
+      salaryRounding: policy?.payroll?.rounding?.salary?.mode ?? "NEAREST_INT"
+    },
+    inputs: inputSummary
+  };
+}
+
+// Demo fallback (keeps your current behavior working)
+const DEMO_EMPLOYEES = withParsedJobDates([
+  {
+    name: "Marcus",
+    jobs: [
+      { title: "Backend", baseSalary: 380000, annualIncrease: 0.03, startDate: "2021-01-01" },
+      { title: "Ops", baseSalary: 140000, annualIncrease: 0.025, startDate: "2022-05-01" }
+    ]
+  },
+  {
+    name: "Anna",
+    jobs: [
+      { title: "Frontend", baseSalary: 450000, annualIncrease: 0.02, startDate: "2022-06-01" }
+    ]
+  }
+]);
+
 export default {
-  run: (now = new Date(), policy = {}) => {
-    const tzMode = policy?.payroll?.raiseAnniversary?.useUTC ?? true;
+  /**
+   * run(now, policy, input)
+   * Backwards-compatible:
+   * - If you call run(now) it still works (policy optional)
+   * - If you call run(now, policy) it uses policy
+   * - If you call run(now, policy, { employees }) it uses provided employees
+   */
+  run: (now = new Date(), policy = {}, input = {}) => {
+    const currency = policy?.locale?.currency ?? "NOK";
 
-    function yearsSincePolicy(job, now) {
-      const currentYear = tzMode ? now.getUTCFullYear() : now.getFullYear();
-      const currentMonth = (tzMode ? now.getUTCMonth() : now.getMonth()) + 1;
-      const currentDay = tzMode ? now.getUTCDate() : now.getDate();
-
-      let years = currentYear - job.startYear;
-      if (currentMonth < job.startMonth || (currentMonth === job.startMonth && currentDay < job.startDay)) {
-        years -= 1;
-      }
-      return Math.max(0, years);
-    }
-
-    function calculateSalaryPolicy(job, now) {
-      const years = yearsSincePolicy(job, now);
-      const newSalary = job.baseSalary * Math.pow(1 + job.annualIncrease, years);
-      return Math.round(newSalary);
-    }
+    const employeesInput = input?.employees?.length ? input.employees : DEMO_EMPLOYEES;
+    const employees = withParsedJobDates(employeesInput);
 
     const salaries = employees.map((employee) => {
-      const jobs = employee.jobs.map((job) => ({
+      const jobs = (employee.jobs || []).map((job) => ({
         title: job.title,
-        currentSalary: calculateSalaryPolicy(job, now)
+        currentSalary: calculateSalary(job, now, policy)
       }));
-      const totalSalary = jobs.reduce((sum, job) => sum + job.currentSalary, 0);
-      return { name: employee.name, jobCount: jobs.length, currentSalary: totalSalary, jobs };
+      const totalSalary = jobs.reduce((sum, j) => sum + j.currentSalary, 0);
+
+      return {
+        name: employee.name,
+        jobCount: jobs.length,
+        currentSalary: totalSalary,
+        jobs
+      };
     });
 
+    // Revenue: policy can override fixed value; fallback keeps current behavior
+    const revenueCfg = policy?.metrics?.monthlyRevenue;
     const monthlyRevenueNOK =
-      policy?.metrics?.monthlyRevenue?.source === "FIXED"
-        ? policy.metrics.monthlyRevenue.fixedValue
-        : 0;
+      revenueCfg?.source === "FIXED"
+        ? Number(revenueCfg.fixedValue ?? 0)
+        : 182000;
 
-    const importCfg = policy?.importStatus?.simulated ?? { minutesAgo: 15, accepted: 0, duplicates: 0, rejected: 0 };
-    const importStatus = {
-      lastImportAt: new Date(now.getTime() - (importCfg.minutesAgo ?? 15) * 60 * 1000).toISOString(),
-      accepted: importCfg.accepted ?? 0,
-      duplicates: importCfg.duplicates ?? 0,
-      rejected: importCfg.rejected ?? 0
-    };
+    const importStatus = buildImportStatus(now, policy);
+
+    const explain = buildExplain(now, policy, {
+      employees: employees.length,
+      jobs: employees.reduce((acc, e) => acc + (e.jobs?.length ?? 0), 0)
+    });
 
     return {
       status: "Engine running",
       users: employees.length,
       monthlyRevenueNOK,
+      currency,
       employees: salaries,
       importStatus,
-      policyUsed: {
-        version: policy?.version ?? "none",
-        timezone: policy?.locale?.timezone ?? "UTC",
-        currency: policy?.locale?.currency ?? "NOK",
-        anniversaryUTC: tzMode
-      },
-	 policyUsed: {
-  		version: policy?.version ?? "none",
-  		timezone: policy?.locale?.timezone ?? "UTC",
-  		currency: policy?.locale?.currency ?? "NOK"
-	},
-
-      generatedAt: now.toISOString()
+      explain
     };
   }
 };
