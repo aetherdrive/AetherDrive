@@ -1,4 +1,4 @@
-import engine from '../src/engine.js';
+import engine from "../src/engine.js";
 
 const EMPLOYEE_COUNT = 100;
 const JOBS_PER_EMPLOYEE = 2;
@@ -12,7 +12,7 @@ function buildEmployees() {
         title: `Job-${j + 1}`,
         baseSalary: 350000 + j * 25000,
         annualIncrease: 0.02 + j * 0.005,
-        startDate: `2020-01-${String((j + 1) * 2).padStart(2, '0')}`
+        startDate: `2020-01-${String((j + 1) * 2).padStart(2, "0")}`
       });
     }
     employees.push({ name: `Employee-${i + 1}`, jobs });
@@ -20,43 +20,28 @@ function buildEmployees() {
   return employees;
 }
 
-function yearsSince(startDate, now) {
-  const [year, month, day] = startDate.split('-').map(Number);
-  const currentYear = now.getUTCFullYear();
-  let years = currentYear - year;
-  const currentMonth = now.getUTCMonth() + 1;
-  const currentDay = now.getUTCDate();
-  if (currentMonth < month || (currentMonth === month && currentDay < day)) {
-    years -= 1;
-  }
-  return Math.max(0, years);
-}
-
-function calculateJobSalary(job, now) {
-  const years = yearsSince(job.startDate, now);
-  const newSalary = job.baseSalary * Math.pow(1 + job.annualIncrease, years);
-  return Math.round(newSalary);
-}
-
 const now = new Date();
-const engineMetrics = engine.run(now);
-const dataset = buildEmployees();
-const aggregated = dataset.map((employee) => {
-  const totalSalary = employee.jobs.reduce(
-    (sum, job) => sum + calculateJobSalary(job, now),
-    0
-  );
-  return {
-    name: employee.name,
-    jobCount: employee.jobs.length,
-    currentSalary: totalSalary
-  };
-});
 
-const result = {
-  engineUsers: engineMetrics.users,
-  syntheticUsers: aggregated.length,
-  sample: aggregated.slice(0, 5)
+// Optional policy for realism (matches your policy.json shape)
+const policy = {
+  version: "1.0",
+  locale: { timezone: "UTC", currency: "NOK" },
+  payroll: { raiseAnniversary: { useUTC: true }, raiseModel: "COMPOUND_ANNUAL", rounding: { salary: { mode: "NEAREST_INT" } } },
+  metrics: { monthlyRevenue: { source: "FIXED", fixedValue: 182000 } },
+  importStatus: { source: "SIMULATED", simulated: { minutesAgo: 15, accepted: 128, duplicates: 4, rejected: 2 } }
 };
 
-console.log(JSON.stringify(result, null, 2));
+const employees = buildEmployees();
+const input = { employees };
+
+const t0 = Date.now();
+const engineMetrics = engine.run(input, now, policy);
+const t1 = Date.now();
+
+console.log(JSON.stringify({
+  ms: t1 - t0,
+  users: engineMetrics.users,
+  sampleEmployees: engineMetrics.employees.slice(0, 5),
+  revenue: engineMetrics.monthlyRevenueNOK,
+  policyVersion: engineMetrics.explain?.policyUsed?.version
+}, null, 2));
