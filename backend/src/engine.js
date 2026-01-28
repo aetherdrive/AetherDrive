@@ -114,18 +114,11 @@ const DEMO_EMPLOYEES = withParsedJobDates([
 export default {
   /**
    * run(input, now, policy)
-   * - input: { employees, jobs, events }
-   * - now: Date (injiserbar for testing)
-   * - policy: policy.json (regler)
    */
   run: (input = {}, now = new Date(), policy = {}) => {
-    // engine-logikk
-  }
-};
-
     const currency = policy?.locale?.currency ?? "NOK";
 
-    const employeesInput = input?.employees?.length ? input.employees : DEMO_EMPLOYEES;
+    const employeesInput = Array.isArray(input?.employees) ? input.employees : [];
     const employees = withParsedJobDates(employeesInput);
 
     const salaries = employees.map((employee) => {
@@ -134,7 +127,6 @@ export default {
         currentSalary: calculateSalary(job, now, policy)
       }));
       const totalSalary = jobs.reduce((sum, j) => sum + j.currentSalary, 0);
-
       return {
         name: employee.name,
         jobCount: jobs.length,
@@ -164,7 +156,8 @@ export default {
       currency,
       employees: salaries,
       importStatus,
-      explain
+      explain,
+      generatedAt: now.toISOString()
     };
   }
 };
