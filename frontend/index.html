@@ -20,13 +20,31 @@
   <strong>Ansatte og lønn:</strong>
   <ul id="employee-salaries"></ul>
 </div>
+<div class="card">
+  <strong>Import status:</strong>
+  <div>Sist import: <span id="last-import">-</span></div>
+  <div>Accepted: <span id="import-accepted">0</span></div>
+  <div>Duplicates: <span id="import-duplicates">0</span></div>
+  <div>Rejected: <span id="import-rejected">0</span></div>
+</div>
+<div class="card">
+  <strong>Integration:</strong>
+  <div>Endpoint: <span id="integration-endpoint">-</span></div>
+  <div>Key: <span id="integration-key">-</span></div>
+</div>
 
 <script>
 const elements = {
   status: document.getElementById('status'),
   users: document.getElementById('users'),
   revenue: document.getElementById('revenue'),
-  employeeList: document.getElementById('employee-salaries')
+  employeeList: document.getElementById('employee-salaries'),
+  lastImport: document.getElementById('last-import'),
+  importAccepted: document.getElementById('import-accepted'),
+  importDuplicates: document.getElementById('import-duplicates'),
+  importRejected: document.getElementById('import-rejected'),
+  integrationEndpoint: document.getElementById('integration-endpoint'),
+  integrationKey: document.getElementById('integration-key')
 };
 let lastSnapshot = null;
 let activeController = null;
@@ -39,7 +57,9 @@ function snapshotKey(data) {
     users: data.users,
     revenue: data.revenue,
     currency: data.currency,
-    employees: data.employees
+    employees: data.employees,
+    importStatus: data.importStatus,
+    integration: data.integration
   });
 }
 
@@ -64,6 +84,18 @@ function renderMetrics(data) {
       fragment.appendChild(li);
     });
     elements.employeeList.appendChild(fragment);
+  }
+
+  if (data.importStatus) {
+    elements.lastImport.textContent = data.importStatus.lastImportAt || '-';
+    elements.importAccepted.textContent = data.importStatus.accepted ?? 0;
+    elements.importDuplicates.textContent = data.importStatus.duplicates ?? 0;
+    elements.importRejected.textContent = data.importStatus.rejected ?? 0;
+  }
+
+  if (data.integration) {
+    elements.integrationEndpoint.textContent = data.integration.endpoint || '-';
+    elements.integrationKey.textContent = data.integration.key || '-';
   }
 }
 

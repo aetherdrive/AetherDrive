@@ -3,6 +3,9 @@ import engine from "./engine.js";
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+const INTEGRATION_ENDPOINT =
+  process.env.INTEGRATION_ENDPOINT || "https://aetherdrive.onrender.com/api/metrics";
+const INTEGRATION_KEY = process.env.INTEGRATION_KEY || "demo-key";
 
 app.disable("x-powered-by");
 app.use(express.json({ limit: "100kb" }));
@@ -29,6 +32,11 @@ function buildMetrics() {
     revenue: engineData.monthlyRevenueNOK,
     currency: "NOK",
     employees: engineData.employees,
+    importStatus: engineData.importStatus,
+    integration: {
+      endpoint: INTEGRATION_ENDPOINT,
+      key: INTEGRATION_KEY
+    },
     generatedAt: engineData.generatedAt
   };
 }
@@ -58,6 +66,13 @@ app.get("/health", (req, res) => {
 app.get("/api/metrics", (req, res) => {
   res.set("Cache-Control", "public, max-age=2, stale-while-revalidate=8");
   res.json(getMetrics());
+});
+
+app.get("/api/integration", (req, res) => {
+  res.json({
+    endpoint: INTEGRATION_ENDPOINT,
+    key: INTEGRATION_KEY
+  });
 });
 
 app.listen(PORT, () => {

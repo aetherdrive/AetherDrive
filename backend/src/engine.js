@@ -38,6 +38,16 @@ function calculateSalary(employee, now) {
   return Math.round(newSalary);
 }
 
+function buildImportStatus(now) {
+  const lastImport = new Date(now.getTime() - 15 * 60 * 1000);
+  return {
+    lastImportAt: lastImport.toISOString(),
+    accepted: 128,
+    duplicates: 4,
+    rejected: 2
+  };
+}
+
 export default {
   run: (now = new Date()) => {
     const salaries = employees.map((employee) => ({
@@ -49,6 +59,7 @@ export default {
       users: employees.length,
       monthlyRevenueNOK: 182000,
       employees: salaries,
+      importStatus: buildImportStatus(now),
       generatedAt: now.toISOString()
     };
   }
