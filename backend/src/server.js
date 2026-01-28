@@ -1,26 +1,27 @@
 import express from "express";
-import engine from "./engine.js";
 
 const app = express();
+const PORT = process.env.PORT || 10000;
+
 app.use(express.json());
 
-// Health endpoint
 app.get("/", (req, res) => {
-  res.json({ status: "AetherDrive v3 motor live 🚀" });
+  res.send("AetherDrive backend is running 🚀");
 });
 
-// Metrics for frontend
-app.get("/metrics", (req, res) => {
-  const metrics = engine.run();
-  res.json({ status: "Live", ...metrics });
+app.get("/health", (req, res) => {
+  res.json({ status: "ok" });
 });
 
-// Run motor endpoint
-app.post("/run", (req, res) => {
-  const input = req.body;
-  const output = engine.run ? engine.run(input) : { message: "Engine running" };
-  res.json(output);
+app.get("/api/metrics", (req, res) => {
+  res.json({
+    users: 42,
+    revenue: 12500,
+    currency: "NOK",
+    status: "running"
+  });
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Backend listening on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Backend listening on port ${PORT}`);
+});
