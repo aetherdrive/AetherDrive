@@ -194,6 +194,8 @@ function buildMetrics() {
   const employees = loadEmployees();
   const input = { employees };
   const engineData = engine.run(input, now, policy);
+  const importStatus = loadImportStatus() || engineData.importStatus;
+
 
   return {
     status: engineData.status,
@@ -201,7 +203,7 @@ function buildMetrics() {
     revenue: engineData.monthlyRevenueNOK,
     currency: policy?.locale?.currency ?? "NOK",
     employees: engineData.employees,
-    importStatus: engineData.importStatus,
+    importStatus,
 
     // Explainability
     explain: engineData.explain,
