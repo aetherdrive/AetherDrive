@@ -92,8 +92,19 @@ const INTEGRATION_KEY = process.env.INTEGRATION_KEY || "demo-key"; // DEMO: ikke
 app.post("/api/time-events/import", (req, res) => {
   if (!requireIntegrationKey(req, res)) return;
 
-  const source = String(req.body?.source || "unknown");
-  const events = Array.isArray(req.body?.events) ? req.body.events : [];
+  let body = req.body;
+
+// Hvis body kommer inn som string (skjer med enkelte klienter/proxy), parse den
+if (typeof body === "string") {
+  try { body = JSON.parse(body); } catch { body = {}; }
+}
+
+// Sikker fallback hvis body er null/undefined
+body = body && typeof body === "object" ? body : {};
+
+const source = String(body.source || "unknown");
+const events = Array.isArray(body.events) ? body.events : [];
+
 
   if (events.length === 0) {
     return res.status(400).json({ ok: false, error: "events_required" });
