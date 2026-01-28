@@ -194,6 +194,16 @@ app.use((req, res, next) => {
   return next();
 });
 
+app.post("/api/debug/echo", (req, res) => {
+  res.json({
+    contentType: req.headers["content-type"] || null,
+    bodyType: typeof req.body,
+    body: req.body,
+    keys: req.body && typeof req.body === "object" ? Object.keys(req.body) : null
+  });
+});
+
+
 // ---- Metrics cache ----
 let cachedMetrics = null;
 let cachedAt = 0;
