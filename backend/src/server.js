@@ -89,6 +89,9 @@ const INTEGRATION_ENDPOINT =
   process.env.INTEGRATION_ENDPOINT || "https://aetherdrive.onrender.com/api/metrics";
 const INTEGRATION_KEY = process.env.INTEGRATION_KEY || "demo-key"; // DEMO: ikke eksponer i prod
 
+app.disable("x-powered-by");
+app.use(express.json({ limit: "100kb" }));
+
 app.post("/api/time-events/import", (req, res) => {
   if (!requireIntegrationKey(req, res)) return;
 
@@ -181,8 +184,7 @@ app.get("/api/time-events/status", (req, res) => {
 });
 
 
-app.disable("x-powered-by");
-app.use(express.json({ limit: "100kb" }));
+
 
 // CORS (enkelt nå, strammere senere)
 app.use((req, res, next) => {
