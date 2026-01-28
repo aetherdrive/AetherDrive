@@ -24,13 +24,17 @@
 <script>
 async function fetchMetrics() {
   try {
-    const res = await fetch('/metrics');
+    const res = await fetch('/api/metrics');
+    if (!res.ok) {
+      throw new Error(`Ugyldig svar: ${res.status}`);
+    }
     const data = await res.json();
     document.getElementById('status').textContent = data.status || 'Live';
     document.getElementById('users').textContent = data.users || 0;
-    document.getElementById('revenue').textContent = data.monthlyRevenueNOK
-      ? data.monthlyRevenueNOK.toLocaleString() + ' NOK'
-      : '0 NOK';
+    const currency = data.currency || 'NOK';
+    document.getElementById('revenue').textContent = Number.isFinite(data.revenue)
+      ? data.revenue.toLocaleString() + ` ${currency}`
+      : `0 ${currency}`;
     const ul = document.getElementById('employee-salaries');
     ul.innerHTML = "";
     if (data.employees) {
