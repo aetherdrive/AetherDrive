@@ -191,18 +191,9 @@ const CACHE_TTL_MS = 3000;
 function buildMetrics() {
   const now = new Date();
 
-  // ✅ Policy injiseres her, så alle tall er policy-styrt
-  function buildMetrics() {
-  const now = new Date();
-
   const employees = loadEmployees();
   const input = { employees };
   const engineData = engine.run(input, now, policy);
-
-  return { ... };
-}
-
-
 
   return {
     status: engineData.status,
@@ -212,18 +203,18 @@ function buildMetrics() {
     employees: engineData.employees,
     importStatus: engineData.importStatus,
 
-    // ✅ Explain hvis engine returnerer det (ryddet engine.js gjør det)
+    // Explainability
     explain: engineData.explain,
 
     integration: {
       endpoint: INTEGRATION_ENDPOINT
-      // 🚫 Ikke send key tilbake i prod (hold den server-side)
-      // key: INTEGRATION_KEY
+      // key: INTEGRATION_KEY // DEMO ONLY
     },
 
     generatedAt: engineData.generatedAt ?? now.toISOString()
   };
 }
+
 
 function getMetrics() {
   const nowMs = Date.now();
