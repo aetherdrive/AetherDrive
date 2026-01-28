@@ -186,7 +186,7 @@ app.use((req, res, next) => {
 // ---- Metrics cache ----
 let cachedMetrics = null;
 let cachedAt = 0;
-const CACHE_TTL_MS = 3000;
+const CACHE_TTL_MS = 15000;
 
 function buildMetrics() {
   const now = new Date();
