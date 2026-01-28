@@ -22,36 +22,82 @@
 </div>
 
 <script>
+const elements = {
+  status: document.getElementById('status'),
+  users: document.getElementById('users'),
+  revenue: document.getElementById('revenue'),
+  employeeList: document.getElementById('employee-salaries')
+};
+let lastSnapshot = null;
+let activeController = null;
+const POLL_INTERVAL_MS = 10000;
+
+function snapshotKey(data) {
+  if (!data) return '';
+  return JSON.stringify({
+    status: data.status,
+    users: data.users,
+    revenue: data.revenue,
+    currency: data.currency,
+    employees: data.employees
+  });
+}
+
+function renderMetrics(data) {
+  const key = snapshotKey(data);
+  if (key === lastSnapshot) return;
+  lastSnapshot = key;
+
+  elements.status.textContent = data.status || 'Live';
+  elements.users.textContent = data.users || 0;
+  const currency = data.currency || 'NOK';
+  elements.revenue.textContent = Number.isFinite(data.revenue)
+    ? `${data.revenue.toLocaleString()} ${currency}`
+    : `0 ${currency}`;
+
+  elements.employeeList.textContent = '';
+  if (Array.isArray(data.employees)) {
+    const fragment = document.createDocumentFragment();
+    data.employees.forEach((emp) => {
+      const li = document.createElement('li');
+      li.textContent = `${emp.name}: ${emp.currentSalary.toLocaleString()} NOK`;
+      fragment.appendChild(li);
+    });
+    elements.employeeList.appendChild(fragment);
+  }
+}
+
 async function fetchMetrics() {
+  if (document.hidden) {
+    scheduleNext();
+    return;
+  }
+  if (activeController) {
+    activeController.abort();
+  }
+  activeController = new AbortController();
   try {
-    const res = await fetch('/api/metrics');
+    const res = await fetch('/api/metrics', { signal: activeController.signal });
     if (!res.ok) {
       throw new Error(`Ugyldig svar: ${res.status}`);
     }
     const data = await res.json();
-    document.getElementById('status').textContent = data.status || 'Live';
-    document.getElementById('users').textContent = data.users || 0;
-    const currency = data.currency || 'NOK';
-    document.getElementById('revenue').textContent = Number.isFinite(data.revenue)
-      ? data.revenue.toLocaleString() + ` ${currency}`
-      : `0 ${currency}`;
-    const ul = document.getElementById('employee-salaries');
-    ul.innerHTML = "";
-    if (data.employees) {
-      data.employees.forEach(emp => {
-        const li = document.createElement('li');
-        li.textContent = `${emp.name}: ${emp.currentSalary.toLocaleString()} NOK`;
-        ul.appendChild(li);
-      });
-    }
+    renderMetrics(data);
   } catch (err) {
-    document.getElementById('status').textContent = 'Feil ved henting';
-    console.error(err);
+    if (err.name !== 'AbortError') {
+      elements.status.textContent = 'Feil ved henting';
+      console.error(err);
+    }
+  } finally {
+    scheduleNext();
   }
 }
 
+function scheduleNext() {
+  window.setTimeout(fetchMetrics, POLL_INTERVAL_MS);
+}
+
 fetchMetrics();
-setInterval(fetchMetrics, 10000);
 </script>
 </body>
 </html>
