@@ -1,0 +1,15 @@
+[
+  {
+    "name": "Marcus",
+    "jobs": [
+      { "title": "Backend", "baseSalary": 380000, "annualIncrease": 0.03, "startDate": "2021-01-01" },
+      { "title": "Ops", "baseSalary": 140000, "annualIncrease": 0.025, "startDate": "2022-05-01" }
+    ]
+  },
+  {
+    "name": "Anna",
+    "jobs": [
+      { "title": "Frontend", "baseSalary": 450000, "annualIncrease": 0.02, "startDate": "2022-06-01" }
+    ]
+  }
+]

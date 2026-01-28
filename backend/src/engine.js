@@ -113,13 +113,16 @@ const DEMO_EMPLOYEES = withParsedJobDates([
 
 export default {
   /**
-   * run(now, policy, input)
-   * Backwards-compatible:
-   * - If you call run(now) it still works (policy optional)
-   * - If you call run(now, policy) it uses policy
-   * - If you call run(now, policy, { employees }) it uses provided employees
+   * run(input, now, policy)
+   * - input: { employees, jobs, events }
+   * - now: Date (injiserbar for testing)
+   * - policy: policy.json (regler)
    */
-  run: (now = new Date(), policy = {}, input = {}) => {
+  run: (input = {}, now = new Date(), policy = {}) => {
+    // engine-logikk
+  }
+};
+
     const currency = policy?.locale?.currency ?? "NOK";
 
     const employeesInput = input?.employees?.length ? input.employees : DEMO_EMPLOYEES;

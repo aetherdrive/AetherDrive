@@ -6,6 +6,17 @@ import path from "path";
 
 const POLICY_PATH = path.resolve("config/policy.json");
 const policy = JSON.parse(fs.readFileSync(POLICY_PATH, "utf8"));
+const EMPLOYEES_PATH = path.resolve("data/employees.json");
+
+function loadEmployees() {
+  try {
+    const raw = fs.readFileSync(EMPLOYEES_PATH, "utf8");
+    return JSON.parse(raw);
+  } catch (e) {
+    console.warn(`Employees file not found or invalid JSON: ${EMPLOYEES_PATH}`);
+    return null; // engine kan fallback'e til demo internt hvis du har det der
+  }
+}
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -36,7 +47,10 @@ function buildMetrics() {
   const now = new Date();
 
   // ✅ Policy injiseres her, så alle tall er policy-styrt
-  const engineData = engine.run(now, policy);
+  const employees = loadEmployees();
+const input = { employees };
+const engineData = engine.run(input, now, policy);
+
 
   return {
     status: engineData.status,
