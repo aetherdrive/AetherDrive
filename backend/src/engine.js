@@ -1,25 +1,29 @@
 const employees = [
   {
     name: "Marcus",
-    baseSalary: 500000,
-    annualIncrease: 0.03,
-    startDate: "2021-01-01"
+    jobs: [
+      { title: "Backend", baseSalary: 380000, annualIncrease: 0.03, startDate: "2021-01-01" },
+      { title: "Ops", baseSalary: 140000, annualIncrease: 0.025, startDate: "2022-05-01" }
+    ]
   },
   {
     name: "Anna",
-    baseSalary: 450000,
-    annualIncrease: 0.02,
-    startDate: "2022-06-01"
+    jobs: [
+      { title: "Frontend", baseSalary: 450000, annualIncrease: 0.02, startDate: "2022-06-01" }
+    ]
   }
-].map((employee) => {
-  const [year, month, day] = employee.startDate.split("-").map(Number);
-  return {
-    ...employee,
-    startYear: year,
-    startMonth: month,
-    startDay: day
-  };
-});
+].map((employee) => ({
+  ...employee,
+  jobs: employee.jobs.map((job) => {
+    const [year, month, day] = job.startDate.split("-").map(Number);
+    return {
+      ...job,
+      startYear: year,
+      startMonth: month,
+      startDay: day
+    };
+  })
+}));
 
 function yearsSince(startYear, startMonth, startDay, now) {
   const currentYear = now.getUTCFullYear();
@@ -32,9 +36,9 @@ function yearsSince(startYear, startMonth, startDay, now) {
   return Math.max(0, years);
 }
 
-function calculateSalary(employee, now) {
-  const years = yearsSince(employee.startYear, employee.startMonth, employee.startDay, now);
-  const newSalary = employee.baseSalary * Math.pow(1 + employee.annualIncrease, years);
+function calculateSalary(job, now) {
+  const years = yearsSince(job.startYear, job.startMonth, job.startDay, now);
+  const newSalary = job.baseSalary * Math.pow(1 + job.annualIncrease, years);
   return Math.round(newSalary);
 }
 
@@ -50,10 +54,19 @@ function buildImportStatus(now) {
 
 export default {
   run: (now = new Date()) => {
-    const salaries = employees.map((employee) => ({
-      name: employee.name,
-      currentSalary: calculateSalary(employee, now)
-    }));
+    const salaries = employees.map((employee) => {
+      const jobs = employee.jobs.map((job) => ({
+        title: job.title,
+        currentSalary: calculateSalary(job, now)
+      }));
+      const totalSalary = jobs.reduce((sum, job) => sum + job.currentSalary, 0);
+      return {
+        name: employee.name,
+        jobCount: jobs.length,
+        currentSalary: totalSalary,
+        jobs
+      };
+    });
     return {
       status: "Engine running",
       users: employees.length,
