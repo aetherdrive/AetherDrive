@@ -1,7 +1,7 @@
 import engine from "../src/engine.js";
 
-const EMPLOYEE_COUNT = 100;
-const JOBS_PER_EMPLOYEE = 2;
+const EMPLOYEE_COUNT = 10000;
+const JOBS_PER_EMPLOYEE = 3;
 
 function buildEmployees() {
   const employees = [];

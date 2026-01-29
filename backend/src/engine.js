@@ -1,71 +1,71 @@
 /**
- * AetherDrive Engine (policy-first)
+ * AetherDrive Engine (policy-first) — optimized + fast paths
  * - Deterministic calculations (no I/O)
  * - Policy injected by caller
- * - Input can be provided (employees/jobs/events), with demo fallback
+ * - detailLevel: "FULL" | "TOTALS" (policy.metrics.detailLevel)
  */
 
-function parseStartDate(startDate) {
-  const [year, month, day] = String(startDate).split("-").map(Number);
-  return { startYear: year, startMonth: month, startDay: day };
+function parseStartDateFast(s) {
+  // Expect "YYYY-MM-DD" (10 chars). Avoid split/map allocations.
+  if (typeof s !== "string" || s.length < 10) return { startYear: 0, startMonth: 0, startDay: 0 };
+
+  const y =
+    (s.charCodeAt(0) - 48) * 1000 +
+    (s.charCodeAt(1) - 48) * 100 +
+    (s.charCodeAt(2) - 48) * 10 +
+    (s.charCodeAt(3) - 48);
+  const m = (s.charCodeAt(5) - 48) * 10 + (s.charCodeAt(6) - 48);
+  const d = (s.charCodeAt(8) - 48) * 10 + (s.charCodeAt(9) - 48);
+
+  return { startYear: y | 0, startMonth: m | 0, startDay: d | 0 };
 }
 
-function withParsedJobDates(employees) {
-  return employees.map((employee) => ({
-    ...employee,
-    jobs: (employee.jobs || []).map((job) => ({
-      ...job,
-      ...parseStartDate(job.startDate)
-    }))
-  }));
-}
+function ensureParsedJobDatesInPlace(employees) {
+  // Mutates job objects by adding startYear/startMonth/startDay if missing.
+  for (let i = 0; i < employees.length; i += 1) {
+    const e = employees[i];
+    const jobs = e && Array.isArray(e.jobs) ? e.jobs : null;
+    if (!jobs) continue;
 
-function getDateParts(now, useUTC) {
-  return {
-    year: useUTC ? now.getUTCFullYear() : now.getFullYear(),
-    month: (useUTC ? now.getUTCMonth() : now.getMonth()) + 1,
-    day: useUTC ? now.getUTCDate() : now.getDate()
-  };
-}
+    for (let j = 0; j < jobs.length; j += 1) {
+      const job = jobs[j];
+      if (!job) continue;
 
-function yearsSince({ startYear, startMonth, startDay }, now, useUTC) {
-  const current = getDateParts(now, useUTC);
+      if (job.startYear && job.startMonth && job.startDay) continue;
 
-  let years = current.year - startYear;
-  if (current.month < startMonth || (current.month === startMonth && current.day < startDay)) {
-    years -= 1;
+      const p = parseStartDateFast(String(job.startDate || ""));
+      job.startYear = p.startYear;
+      job.startMonth = p.startMonth;
+      job.startDay = p.startDay;
+    }
   }
-  return Math.max(0, years);
 }
 
-function calculateSalary(job, now, policy) {
-  const useUTC = policy?.payroll?.raiseAnniversary?.useUTC ?? true;
-  const years = yearsSince(job, now, useUTC);
-
-  const raiseModel = policy?.payroll?.raiseModel ?? "COMPOUND_ANNUAL";
-  let newSalary;
-
-  if (raiseModel === "COMPOUND_ANNUAL") {
-    newSalary = job.baseSalary * Math.pow(1 + job.annualIncrease, years);
-  } else {
-    // fallback: simple (non-compounded) annual raise
-    newSalary = job.baseSalary * (1 + job.annualIncrease * years);
+function getCurrentParts(now, useUTC) {
+  if (useUTC) {
+    return { year: now.getUTCFullYear(), month: now.getUTCMonth() + 1, day: now.getUTCDate() };
   }
+  return { year: now.getFullYear(), month: now.getMonth() + 1, day: now.getDate() };
+}
 
-  const roundingMode = policy?.payroll?.rounding?.salary?.mode ?? "NEAREST_INT";
-  if (roundingMode === "NEAREST_INT") return Math.round(newSalary);
-  if (roundingMode === "FLOOR_INT") return Math.floor(newSalary);
-  if (roundingMode === "CEIL_INT") return Math.ceil(newSalary);
+function yearsSinceParsed(job, currentParts) {
+  let years = (currentParts.year - (job.startYear | 0)) | 0;
+  const sm = job.startMonth | 0;
+  const sd = job.startDay | 0;
 
-  return Math.round(newSalary);
+  if (currentParts.month < sm || (currentParts.month === sm && currentParts.day < sd)) years -= 1;
+  return years > 0 ? years : 0;
+}
+
+function roundSalary(x, mode) {
+  if (mode === "FLOOR_INT") return Math.floor(x);
+  if (mode === "CEIL_INT") return Math.ceil(x);
+  return Math.round(x);
 }
 
 function buildImportStatus(now, policy) {
   const src = policy?.importStatus?.source ?? "SIMULATED";
-  if (src !== "SIMULATED") {
-    // Placeholder: later you can plug real import status from DB/connector
-    return null;
-  }
+  if (src !== "SIMULATED") return null;
 
   const sim = policy?.importStatus?.simulated ?? {};
   const minutesAgo = sim.minutesAgo ?? 15;
@@ -88,73 +88,102 @@ function buildExplain(now, policy, inputSummary) {
       currency: policy?.locale?.currency ?? "NOK",
       raiseModel: policy?.payroll?.raiseModel ?? "COMPOUND_ANNUAL",
       anniversaryUTC: policy?.payroll?.raiseAnniversary?.useUTC ?? true,
-      salaryRounding: policy?.payroll?.rounding?.salary?.mode ?? "NEAREST_INT"
+      salaryRounding: policy?.payroll?.rounding?.salary?.mode ?? "NEAREST_INT",
+      detailLevel: policy?.metrics?.detailLevel ?? "FULL"
     },
     inputs: inputSummary
   };
 }
 
-// Demo fallback (keeps your current behavior working)
-const DEMO_EMPLOYEES = withParsedJobDates([
-  {
-    name: "Marcus",
-    jobs: [
-      { title: "Backend", baseSalary: 380000, annualIncrease: 0.03, startDate: "2021-01-01" },
-      { title: "Ops", baseSalary: 140000, annualIncrease: 0.025, startDate: "2022-05-01" }
-    ]
-  },
-  {
-    name: "Anna",
-    jobs: [
-      { title: "Frontend", baseSalary: 450000, annualIncrease: 0.02, startDate: "2022-06-01" }
-    ]
-  }
-]);
-
 export default {
-  /**
-   * run(input, now, policy)
-   */
   run: (input = {}, now = new Date(), policy = {}) => {
-    const currency = policy?.locale?.currency ?? "NOK";
+    const localeCurrency = policy?.locale?.currency ?? "NOK";
+    const employees = Array.isArray(input?.employees) ? input.employees : [];
 
-    const employeesInput = Array.isArray(input?.employees) ? input.employees : [];
-    const employees = withParsedJobDates(employeesInput);
+    // Parse start-dates only once per job object (and only if missing)
+    ensureParsedJobDatesInPlace(employees);
 
-    const salaries = employees.map((employee) => {
-      const jobs = (employee.jobs || []).map((job) => ({
-        title: job.title,
-        currentSalary: calculateSalary(job, now, policy)
-      }));
-      const totalSalary = jobs.reduce((sum, j) => sum + j.currentSalary, 0);
-      return {
-        name: employee.name,
+    const useUTC = policy?.payroll?.raiseAnniversary?.useUTC ?? true;
+    const currentParts = getCurrentParts(now, useUTC);
+
+    const raiseModel = policy?.payroll?.raiseModel ?? "COMPOUND_ANNUAL";
+    const roundingMode = policy?.payroll?.rounding?.salary?.mode ?? "NEAREST_INT";
+
+    // NEW: fast path control
+    const detailLevel = policy?.metrics?.detailLevel ?? "FULL"; // "FULL" | "TOTALS"
+
+    // Build output with minimal allocations
+    const employeesOut = new Array(employees.length);
+    let totalJobs = 0;
+
+    for (let i = 0; i < employees.length; i += 1) {
+      const e = employees[i];
+      const jobs = e && Array.isArray(e.jobs) ? e.jobs : [];
+      totalJobs += jobs.length;
+
+      let totalSalary = 0;
+
+      if (detailLevel === "TOTALS") {
+        // Fast path: compute totals only, no per-job array allocation
+        for (let j = 0; j < jobs.length; j += 1) {
+          const job = jobs[j];
+          const years = yearsSinceParsed(job, currentParts);
+
+          const base = Number(job.baseSalary || 0);
+          const inc = Number(job.annualIncrease || 0);
+
+          let newSalary;
+          if (raiseModel === "COMPOUND_ANNUAL") newSalary = base * Math.pow(1 + inc, years);
+          else newSalary = base * (1 + inc * years);
+
+          totalSalary += roundSalary(newSalary, roundingMode);
+        }
+
+        employeesOut[i] = { name: e?.name, jobCount: jobs.length, currentSalary: totalSalary };
+        continue;
+      }
+
+      // FULL path: include per-job breakdown
+      const outJobs = new Array(jobs.length);
+
+      for (let j = 0; j < jobs.length; j += 1) {
+        const job = jobs[j];
+        const years = yearsSinceParsed(job, currentParts);
+
+        const base = Number(job.baseSalary || 0);
+        const inc = Number(job.annualIncrease || 0);
+
+        let newSalary;
+        if (raiseModel === "COMPOUND_ANNUAL") newSalary = base * Math.pow(1 + inc, years);
+        else newSalary = base * (1 + inc * years);
+
+        const currentSalary = roundSalary(newSalary, roundingMode);
+        totalSalary += currentSalary;
+
+        outJobs[j] = { title: job?.title, currentSalary };
+      }
+
+      employeesOut[i] = {
+        name: e?.name,
         jobCount: jobs.length,
         currentSalary: totalSalary,
-        jobs
+        jobs: outJobs
       };
-    });
+    }
 
-    // Revenue: policy can override fixed value; fallback keeps current behavior
     const revenueCfg = policy?.metrics?.monthlyRevenue;
-    const monthlyRevenueNOK =
-      revenueCfg?.source === "FIXED"
-        ? Number(revenueCfg.fixedValue ?? 0)
-        : 182000;
+    const monthlyRevenueNOK = revenueCfg?.source === "FIXED" ? Number(revenueCfg.fixedValue ?? 0) : 182000;
 
     const importStatus = buildImportStatus(now, policy);
 
-    const explain = buildExplain(now, policy, {
-      employees: employees.length,
-      jobs: employees.reduce((acc, e) => acc + (e.jobs?.length ?? 0), 0)
-    });
+    const explain = buildExplain(now, policy, { employees: employees.length, jobs: totalJobs });
 
     return {
       status: "Engine running",
       users: employees.length,
       monthlyRevenueNOK,
-      currency,
-      employees: salaries,
+      currency: localeCurrency,
+      employees: employeesOut,
       importStatus,
       explain,
       generatedAt: now.toISOString()
