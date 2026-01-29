@@ -3,7 +3,7 @@ import engine from "./engine.js";
 
 import fs from "fs";
 import path from "path";
-import crypto from "crypto"
+import crypto from "crypto";
 
 const POLICY_PATH = path.resolve("config/policy.json");
 const policy = JSON.parse(fs.readFileSync(POLICY_PATH, "utf8"));
@@ -80,10 +80,22 @@ function isValidEvent(e) {
   return ["IN", "OUT", "BREAK_START", "BREAK_END"].includes(type);
 }
 
+function normalizeJsonBody(body) {
+  if (typeof body === "string") {
+    try {
+      return JSON.parse(body);
+    } catch {
+      return {};
+    }
+  }
+  return body && typeof body === "object" ? body : {};
+}
+
 
 
 const app = express();
 const PORT = process.env.PORT || 10000;
+
 
 const INTEGRATION_ENDPOINT =
   process.env.INTEGRATION_ENDPOINT || "https://aetherdrive.onrender.com/api/metrics";
@@ -95,18 +107,9 @@ app.use(express.json({ limit: "100kb" }));
 app.post("/api/time-events/import", (req, res) => {
   if (!requireIntegrationKey(req, res)) return;
 
-  let body = req.body;
-
-// Hvis body kommer inn som string (skjer med enkelte klienter/proxy), parse den
-if (typeof body === "string") {
-  try { body = JSON.parse(body); } catch { body = {}; }
-}
-
-// Sikker fallback hvis body er null/undefined
-body = body && typeof body === "object" ? body : {};
-
-const source = String(body.source || "unknown");
-const events = Array.isArray(body.events) ? body.events : [];
+  const body = normalizeJsonBody(req.body);
+  const source = String(body.source || "unknown");
+  const events = Array.isArray(body.events) ? body.events : [];
 
 
   if (events.length === 0) {
@@ -211,13 +214,13 @@ function groupByLocalDateUTC(iso) {
 }
 
 function summarizeEmployeeEvents(events) {
-  // Events are expected sorted by occurredAt asc
-  let openIn = null; // { at, deviceId, source, externalId }
+  // Events are expected sorted by occurredAt asc␊
+  let openIn = null; // { at }
   let openBreak = null;
   let lastOutAt = null;
 
-  const shifts = []; // { inAt, outAt, workMs, breakMs, anomalies: [] }
-  const anomalies = []; // global anomalies
+  const shifts = []; // { inAt, outAt, workMs, breakMs, anomalies: [] }␊
+  const anomalies = []; // global anomalies␊
   let breakMsAcc = 0;
 
   for (const ev of events) {
@@ -233,75 +236,33 @@ function summarizeEmployeeEvents(events) {
       }
       continue;
     }
- 
+ if (type === "OUT") {
+      if (!openIn) {
+        if (lastOutAt) {
+          const prev = Date.parse(lastOutAt);
+          const cur = Date.parse(ev.occurredAt);
+          if (Number.isFinite(prev) && Number.isFinite(cur) && Math.abs(cur - prev) <= 2 * 60 * 1000) {
+            anomalies.push({ type: "DUPLICATE_OUT", at: ev.occurredAt });
+            continue;
+          }
+        }
 
-
-if (type === "OUT") {
-  if (!openIn) {
-    // Hvis vi nylig fikk en OUT (f.eks innen 2 minutter), treat som duplikat
-    if (lastOutAt) {
-      const prev = new Date(lastOutAt).getTime();
-      const cur = new Date(ev.occurredAt).getTime();
-      if (Number.isFinite(prev) && Number.isFinite(cur) && Math.abs(cur - prev) <= 2 * 60 * 1000) {
-        anomalies.push({ type: "DUPLICATE_OUT", at: ev.occurredAt });
+        anomalies.push({ type: "OUT_WITHOUT_IN", at: ev.occurredAt });
         continue;
       }
-    }
 
-    anomalies.push({ type: "OUT_WITHOUT_IN", at: ev.occurredAt });
-    continue;
-  }
-
-  // Hvis vi har en åpen pause når OUT kommer
-  if (openBreak) {
-    anomalies.push({ type: "OPEN_BREAK_AT_OUT", at: ev.occurredAt });
-    openBreak = null;
-  }
-
-  const inAtMs = new Date(openIn.at).getTime();
-  const outAtMs = new Date(ev.occurredAt).getTime();
-
-  if (outAtMs > inAtMs) {
-        const totalMs = outAtMs - inAtMs;
-        const workMs = Math.max(0, totalMs - breakMsAcc);
-
-    shifts.push({
-      inAt: openIn.at,
-      outAt: ev.occurredAt,
-      totalMs,
-      breakMs: breakMsAcc,
-      workMs
-    });
-
-    // ✅ Viktig: lagre tidspunktet for sist “gyldige” OUT
-    lastOutAt = ev.occurredAt;
-  } else {
-        anomalies.push({ type: "INVALID_SHIFT_RANGE", inAt: openIn.at, outAt: ev.occurredAt });
+      if (openBreak) {
+        anomalies.push({ type: "OPEN_BREAK_AT_OUT", at: ev.occurredAt });
+        openBreak = null;
       }
 
-  // Reset shift state
-  openIn = null;
-  openBreak = null;
-  breakMsAcc = 0;
-  continue;
-}
+      const inAtMs = Date.parse(openIn.at);
+      const outAtMs = Date.parse(ev.occurredAt);
 
- }
-
-  if (openIn) anomalies.push({ type: "MISSING_OUT", inAt: openIn.at });
-  if (openBreak) anomalies.push({ type: "MISSING_BREAK_END", at: openBreak.at });
-
-  return { shifts, anomalies };
-
-
-
-      const inAt = new Date(openIn.at).getTime();
-      const outAt = new Date(ev.occurredAt).getTime();
-
-      if (!Number.isFinite(inAt) || !Number.isFinite(outAt) || outAt <= inAt) {
+      if (!Number.isFinite(inAtMs) || !Number.isFinite(outAtMs) || outAtMs <= inAtMs) {
         anomalies.push({ type: "INVALID_SHIFT_RANGE", inAt: openIn.at, outAt: ev.occurredAt });
       } else {
-        const totalMs = outAt - inAt;
+        const totalMs = outAtMs - inAtMs;
         const workMs = Math.max(0, totalMs - breakMsAcc);
 
         shifts.push({
@@ -311,6 +272,8 @@ if (type === "OUT") {
           breakMs: breakMsAcc,
           workMs
         });
+
+        lastOutAt = ev.occurredAt;
       }
 
       openIn = null;
@@ -341,8 +304,9 @@ if (type === "OUT") {
         anomalies.push({ type: "BREAK_END_WITHOUT_START", at: ev.occurredAt });
         continue;
       }
-      const bs = new Date(openBreak.at).getTime();
-      const be = new Date(ev.occurredAt).getTime();
+	 
+	 const bs = Date.parse(openBreak.at);
+      const be = Date.parse(ev.occurredAt);
       if (Number.isFinite(bs) && Number.isFinite(be) && be > bs) {
         breakMsAcc += (be - bs);
       } else {
@@ -355,12 +319,8 @@ if (type === "OUT") {
     anomalies.push({ type: "UNKNOWN_EVENT_TYPE", at: ev.occurredAt, value: ev.type });
   }
 
-  if (openIn) {
-    anomalies.push({ type: "MISSING_OUT", inAt: openIn.at });
-  }
-  if (openBreak) {
-    anomalies.push({ type: "MISSING_BREAK_END", breakStartAt: openBreak.at });
-  }
+  if (openIn) anomalies.push({ type: "MISSING_OUT", inAt: openIn.at });
+  if (openBreak) anomalies.push({ type: "MISSING_BREAK_END", breakStartAt: openBreak.at });
 
   // Day summaries (UTC day buckets for now)
   const byDay = {};
@@ -411,15 +371,14 @@ let cachedMetrics = null;
 let cachedAt = 0;
 const CACHE_TTL_MS = 15000;
 
+
 function buildMetrics() {
   const now = new Date();
 
   const employees = loadEmployees();
   const input = { employees };
   const engineData = engine.run(input, now, policy);
-  const realImportStatus = loadImportStatus();
   const importStatus = loadImportStatus() || engineData.importStatus;
-
 
   return {
     status: engineData.status,
