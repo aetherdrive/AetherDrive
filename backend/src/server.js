@@ -214,6 +214,7 @@ function summarizeEmployeeEvents(events) {
   // Events are expected sorted by occurredAt asc
   let openIn = null; // { at, deviceId, source, externalId }
   let openBreak = null;
+  let lastOutAt = null;
 
   const shifts = []; // { inAt, outAt, workMs, breakMs, anomalies: [] }
   const anomalies = []; // global anomalies
@@ -232,16 +233,67 @@ function summarizeEmployeeEvents(events) {
       }
       continue;
     }
+ 
 
-    if (type === "OUT") {
-      if (!openIn) {
-        anomalies.push({ type: "OUT_WITHOUT_IN", at: ev.occurredAt });
+
+if (type === "OUT") {
+  if (!openIn) {
+    // Hvis vi nylig fikk en OUT (f.eks innen 2 minutter), treat som duplikat
+    if (lastOutAt) {
+      const prev = new Date(lastOutAt).getTime();
+      const cur = new Date(ev.occurredAt).getTime();
+      if (Number.isFinite(prev) && Number.isFinite(cur) && Math.abs(cur - prev) <= 2 * 60 * 1000) {
+        anomalies.push({ type: "DUPLICATE_OUT", at: ev.occurredAt });
         continue;
       }
-      if (openBreak) {
-        anomalies.push({ type: "OPEN_BREAK_AT_OUT", at: ev.occurredAt });
-        openBreak = null;
+    }
+
+    anomalies.push({ type: "OUT_WITHOUT_IN", at: ev.occurredAt });
+    continue;
+  }
+
+  // Hvis vi har en åpen pause når OUT kommer
+  if (openBreak) {
+    anomalies.push({ type: "OPEN_BREAK_AT_OUT", at: ev.occurredAt });
+    openBreak = null;
+  }
+
+  const inAtMs = new Date(openIn.at).getTime();
+  const outAtMs = new Date(ev.occurredAt).getTime();
+
+  if (outAtMs > inAtMs) {
+        const totalMs = outAtMs - inAtMs;
+        const workMs = Math.max(0, totalMs - breakMsAcc);
+
+    shifts.push({
+      inAt: openIn.at,
+      outAt: ev.occurredAt,
+      totalMs,
+      breakMs: breakMsAcc,
+      workMs
+    });
+
+    // ✅ Viktig: lagre tidspunktet for sist “gyldige” OUT
+    lastOutAt = ev.occurredAt;
+  } else {
+        anomalies.push({ type: "INVALID_SHIFT_RANGE", inAt: openIn.at, outAt: ev.occurredAt });
       }
+
+  // Reset shift state
+  openIn = null;
+  openBreak = null;
+  breakMsAcc = 0;
+  continue;
+}
+
+ }
+
+  if (openIn) anomalies.push({ type: "MISSING_OUT", inAt: openIn.at });
+  if (openBreak) anomalies.push({ type: "MISSING_BREAK_END", at: openBreak.at });
+
+  return { shifts, anomalies };
+
+
 
       const inAt = new Date(openIn.at).getTime();
       const outAt = new Date(ev.occurredAt).getTime();
