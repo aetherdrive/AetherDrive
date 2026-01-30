@@ -1,6 +1,8 @@
 import express from "express";
 import engine from "./engine.js";
 import { enginePayrollRouter } from "./routes/engine.payroll.routes.js";
+import { authenticate } from "./middleware/auth.js";
+import { errorHandler } from "./middleware/errorHandler.js";
 import { docsRouter } from "./routes/docs.js";
 import { rateLimit } from "./middleware/rateLimit.js";
 
@@ -111,7 +113,7 @@ if (!INTEGRATION_KEY) {
 }
 
 function requireIntegrationKey(req, res) {
-  const key = req.header("X-AETHERDRIVE-KEY") || "";
+  const key = req.header("X-PAYBRIDGE-KEY") || "";
   if (key !== INTEGRATION_KEY) {
     res.status(401).json({ ok: false, error: "unauthorized" });
     return false;
@@ -153,6 +155,12 @@ app.use(express.json({ limit: "100kb" }));
 // accidental overload. Adjust windowMs and max as needed.
 app.use(rateLimit({ windowMs: 10 * 60 * 1000, max: 100 }));
 
+// Authenticate all incoming requests. This middleware looks for a JWT token
+// in the Authorization header and populates req.user. If JWT_SECRET is not
+// configured the middleware will return a 500 error. You can skip this
+// middleware in development by not setting JWT_SECRET.
+app.use(authenticate);
+
 /* --------------------------------------------------
    CORS
 -------------------------------------------------- */
@@ -164,7 +172,7 @@ app.use((req, res, next) => {
   // Content-Type and the integration key header, allow X-User-Role so
   // browsers can send the role for RBAC. You can extend this list with
   // other custom headers as needed.
-  res.set("Access-Control-Allow-Headers", "Content-Type, X-AETHERDRIVE-KEY, X-User-Role, Authorization, X-API-Key");
+  res.set("Access-Control-Allow-Headers", "Content-Type, X-PAYBRIDGE-KEY, X-User-Role, Authorization, X-API-Key");
   if (req.method === "OPTIONS") return res.sendStatus(204);
   return next();
 });
@@ -185,6 +193,11 @@ app.use("/api", enginePayrollRouter);
 // for developers to explore the available endpoints and integrate with
 // the payroll API.
 app.use("/api-docs", docsRouter);
+
+// Global error handler. This should be registered after all routes so it
+// catches any errors thrown from route handlers or middleware. Do not
+// register routes after this line.
+app.use(errorHandler);
 
 /* --------------------------------------------------
    Metrics cache (🔥 fast path)

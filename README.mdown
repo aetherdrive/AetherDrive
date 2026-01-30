@@ -1,9 +1,9 @@
-# AetherDrive V3+ Ultimate
+# PayBridge – den usynlige lønnsmotoren
 
-- Backend: Node.js + Express (HR, lønn, årlig lønnsøkning, metrics)
-- Frontend: Static HTML dashboard
-- AI microservice: Flask dummy
-- Klar for Render deploy (Backend, Frontend, AI-service)
+- Backend: Node.js + Express (HR, lønn, lønnsøkning, metrics) med integrert regelmotor
+- Frontend: statisk HTML for enklere administrasjon (kan byttes med moderne rammeverk)
+- AI microservice: Flask/FastAPI for avviksforklaringer (kan utvides)
+- Klar for Render‑deploy (backend, frontend, AI-service) og kan kjøres lokalt eller på Starlink‑node
 
 ## Konfigurasjon
 
@@ -12,15 +12,17 @@ Før du starter backend-tjenesten må du definere noen miljøvariabler. Du kan k
 | Variabel | Beskrivelse |
 |---------|-------------|
 | `PORT` | Hvilken port Express-serveren skal lytte på (default 10000). |
-| `INTEGRATION_KEY` | En sterk delt hemmelighet som brukes til å autentisere integrasjonskall via headeren `X-AETHERDRIVE-KEY`. **Påkrevd i produksjon**. |
+| `INTEGRATION_KEY` | En sterk delt hemmelighet som brukes til å autentisere integrasjonskall via headeren `X-PAYBRIDGE-KEY`. **Påkrevd i produksjon**. |
 | `PAYROLL_ENCRYPTION_KEY` | En 32-tegns nøkkel som aktiverer AES‑256‑CTR-kryptering av lønnsdata på disken. Uten denne nøkkelen lagres data i klartekst. |
 | `INTEGRATION_ENDPOINT` | Opsjonell URL for metrics-integrasjon. |
+| `DATABASE_URL` | Postgres‑tilkoblingsstreng. Hvis satt kobles backend til en database i stedet for lokal JSON‑lagring. |
+| `JWT_SECRET` | Hemmelig nøkkel som brukes til å signere og verifisere JWT‑tokens for autentisering. Påkrevd hvis du aktiverer auth-middleware. |
 
 ## Sikkerhet og rollebasert tilgang (RBAC)
 
 Alle endepunkter i `backend/src/routes/engine.payroll.routes.js` er beskyttet av to mekanismer:
 
-1. **Integrasjonsnøkkel** – Hver forespørsel mot API-et må inkludere headeren `X-AETHERDRIVE-KEY` med verdien du har satt i miljøvariabelen `INTEGRATION_KEY`. Hvis denne hemmeligheten mangler eller er feil, returnerer serveren HTTP 401. Dette hindrer uautorisert bruk av API-et over internett.
+1. **Integrasjonsnøkkel** – Hver forespørsel mot API-et må inkludere headeren `X-PAYBRIDGE-KEY` med verdien du har satt i miljøvariabelen `INTEGRATION_KEY`. Hvis denne hemmeligheten mangler eller er feil, returnerer serveren HTTP 401. Dette hindrer uautorisert bruk av API-et over internett.
 
 2. **Rolle** – For å kontrollere hvem som kan opprette, importere, beregne og låse lønnskjøringer, må du sende headeren `X-User-Role` med en av de tillatte rollene: `employer_admin` eller `accountant`. Alle andre verdier (eller fravær av headeren) fører til HTTP 403 `forbidden`. I et produksjonssystem vil du typisk hente rollen fra et autentiseringstoken i stedet for en løs header, men i denne referanseimplementasjonen holder vi det enkelt.
 
@@ -33,7 +35,7 @@ Headeren `X-User-Role` er også lagt til i CORS‑konfigurasjonen slik at nettle
 ```
 POST /api/payroll-runs
 Headers:
-  X-AETHERDRIVE-KEY: <din hemmelige nøkkel>
+  X-PAYBRIDGE-KEY: <din hemmelige nøkkel>
   X-User-Role: employer_admin
 Content-Type: application/json
 
@@ -55,7 +57,7 @@ Dette endepunktet oppretter en ny lønnskjøring i status `draft`. Datoene må v
 ```
 POST /api/payroll-runs/{runId}/import
 Headers:
-  X-AETHERDRIVE-KEY: <din nøkkel>
+  X-PAYBRIDGE-KEY: <din nøkkel>
   X-User-Role: employer_admin
 Content-Type: application/json
 
@@ -75,7 +77,7 @@ Dette endepunktet legger inn lønns- og trekkposter i kjøringen så lenge statu
 ```
 POST /api/payroll-runs/{runId}/calculate
 Headers:
-  X-AETHERDRIVE-KEY: <din nøkkel>
+  X-PAYBRIDGE-KEY: <din nøkkel>
   X-User-Role: employer_admin
 ```
 
@@ -104,6 +106,16 @@ Gir en enkel rapport over brutto, trekk og status for en kjøring. Etter at beta
 - **Rate limiting:** Alle forespørsler begrenses i minnet til maks 100 per 10 minutter per IP. Forsøk over dette returnerer HTTP 429.
 - **Idempotens og sjekksum:** Statusmaskinen forhindrer at en handling (import, beregning, godkjenning, commit) utføres i feil rekkefølge. Ved commit genereres en sjekksum over alle inputposter slik at du senere kan verifisere at dataene ikke er endret.
 - **Audit og migrasjoner:** Prosjektet inkluderer SQL‑migrasjoner i `backend/db/migrations` for å støtte en fremtidig overgang til Postgres og immutabel audit-logg.
+
+## Starlink‑modus og offline jobbkø
+
+For enkelte installasjoner kan du ha behov for å kjøre lønnsmotoren på en node med begrenset eller uforutsigbar nettverksforbindelse – for eksempel over en Starlink‑forbindelse eller i et feltkontor. I slike tilfeller ønsker du at tidskritiske operasjoner som a‑melding og utbetaling **ikke går tapt** dersom nettet faller ut. Systemet har derfor støtte for en enkel offline jobbkø:
+
+- **RUN_MODE=starlink:** I `.env` kan du sette `RUN_MODE=starlink` for å signalisere at motoren skal være tolerant mot nettverksbrudd. Når denne modusen er aktivert vil du typisk lagre eksterne handlinger (som innsending til Altinn eller bank) som jobber i en lokal kø i stedet for å forsøke umiddelbart. Når forbindelsen er tilbake dreneres køen og oppgavene sendes.
+- **queueService:** Modulen `backend/src/services/queueService.js` implementerer en grunnleggende in‑memory kø med funksjonene `enqueue(task)`, `drain(handler)` og `pending()`. Du kan utvide denne til å persistere køen til disk når du kjører i Starlink‑modus (f.eks. skrive til en JSON‑fil) slik at jobber overlever omstart og nettverksbrudd. Dette er et startpunkt som demonstrerer prinsippet – i produksjon bør du bruke et robust køsystem som Redis/Bull.
+- **Robusthet over romantikk:** Selv om Starlink kan gi stabil internettforbindelse på avsidesliggende steder, garanterer ingen teknologi 100 % oppetid. Ved å behandle eksterne kall som asynkrone jobber, sikrer du at systemet fortsatt fungerer når forbindelsen faller ut og at ingenting går tapt når den gjenopprettes.
+
+Ved å kombinere `RUN_MODE=starlink` og offline jobbkø får du en motor som er robust mot midlertidige avbrudd i strøm eller internett og som enkelt kan «ta igjen» det tapte når forbindelsen er tilbake.
 
 ## Videre arbeid
 

@@ -1,9 +1,9 @@
 {
   "openapi": "3.0.0",
   "info": {
-    "title": "AetherDrive Payroll API",
+    "title": "PayBridge Payroll API",
     "version": "1.0.0",
-    "description": "This specification describes the experimental payroll endpoints provided by the AetherDrive backend. Each endpoint returns a JSON response and requires that a valid integration key be supplied via the X-AETHERDRIVE-KEY header."
+    "description": "Denne spesifikasjonen beskriver de eksperimentelle lønnsendepunktene levert av PayBridge-backenden. Hvert endepunkt returnerer JSON og krever at en gyldig integrasjonsnøkkel sendes via X-PAYBRIDGE-KEY-headeren."
   },
   "paths": {
     "/api/payroll-runs": {

@@ -1,6 +1,9 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+// Import rule engine helpers. These are used to calculate derived payroll lines
+// such as employer tax and other benefits based on the current rule set.
+import { loadRuleSet, calculateDerivedLines } from '../rules/ruleEngine.js';
 
 // Optional encryption key for securing payroll data at rest.
 // Set PAYROLL_ENCRYPTION_KEY to a 32+ character string to enable AES-256-CTR
@@ -161,10 +164,30 @@ export function calculateRun(runId) {
       gross += amount;
     }
   }
+
+  // Use the rule engine to compute derived lines (e.g. employer tax) based
+  // on the current rule set version. If the specified ruleset is missing,
+  // the rule engine will throw; catch the error and ignore derived lines.
+  let derivedLines = [];
+  let employerTaxTotal = 0;
+  try {
+    const ruleSet = loadRuleSet(run.rule_set_version || 'v1');
+    derivedLines = calculateDerivedLines(run.inputs, ruleSet);
+    employerTaxTotal = derivedLines
+      .filter((it) => it.line_type === 'employer_tax')
+      .reduce((acc, it) => acc + (typeof it.amount === 'number' ? it.amount : 0), 0);
+  } catch (e) {
+    // If ruleset cannot be loaded or applied, continue without derived lines.
+    employerTaxTotal = 0;
+    derivedLines = [];
+  }
+
   const totals = {
     gross_total: gross,
     withholding_total: withholding,
-    input_count: run.inputs.length
+    employer_tax_total: employerTaxTotal,
+    input_count: run.inputs.length,
+    derived_count: derivedLines.length
   };
   run.totals = totals;
   run.status = 'calculated';
