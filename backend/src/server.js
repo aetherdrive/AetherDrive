@@ -1,5 +1,8 @@
 import express from "express";
 import engine from "./engine.js";
+import { enginePayrollRouter } from "./routes/engine.payroll.routes.js";
+import { docsRouter } from "./routes/docs.js";
+import { rateLimit } from "./middleware/rateLimit.js";
 
 import fs from "fs";
 import path from "path";
@@ -97,7 +100,15 @@ function saveImportStatus(status) {
 
 const INTEGRATION_ENDPOINT =
   process.env.INTEGRATION_ENDPOINT || "https://aetherdrive.onrender.com/api/metrics";
-const INTEGRATION_KEY = process.env.INTEGRATION_KEY || "demo-key";
+const INTEGRATION_KEY = process.env.INTEGRATION_KEY || null;
+
+// In secure mode, require an integration key to be provided via environment.
+// If no key is supplied, throw on startup to prevent accidental exposure.
+if (!INTEGRATION_KEY) {
+  throw new Error(
+    "Missing INTEGRATION_KEY environment variable. Set this to a strong shared secret to allow integration requests."
+  );
+}
 
 function requireIntegrationKey(req, res) {
   const key = req.header("X-AETHERDRIVE-KEY") || "";
@@ -138,6 +149,10 @@ const PORT = process.env.PORT || 10000;
 app.disable("x-powered-by");
 app.use(express.json({ limit: "100kb" }));
 
+// Apply a simple rate limiter to all requests. This helps prevent abuse and
+// accidental overload. Adjust windowMs and max as needed.
+app.use(rateLimit({ windowMs: 10 * 60 * 1000, max: 100 }));
+
 /* --------------------------------------------------
    CORS
 -------------------------------------------------- */
@@ -145,10 +160,31 @@ app.use(express.json({ limit: "100kb" }));
 app.use((req, res, next) => {
   res.set("Access-Control-Allow-Origin", "*");
   res.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-  res.set("Access-Control-Allow-Headers", "Content-Type, X-AETHERDRIVE-KEY, Authorization, X-API-Key");
+  // Permit custom headers used by the payroll API. In addition to
+  // Content-Type and the integration key header, allow X-User-Role so
+  // browsers can send the role for RBAC. You can extend this list with
+  // other custom headers as needed.
+  res.set("Access-Control-Allow-Headers", "Content-Type, X-AETHERDRIVE-KEY, X-User-Role, Authorization, X-API-Key");
   if (req.method === "OPTIONS") return res.sendStatus(204);
   return next();
 });
+
+/* --------------------------------------------------
+   Payroll Engine Routes (experimental)
+   -------------------------------------------------- */
+// Mount the payroll engine router under /api. Endpoints defined in
+// backend/src/routes/engine.payroll.routes.js will be available as
+// /api/payroll-runs, /api/payroll-runs/:id/import, etc.
+app.use("/api", enginePayrollRouter);
+
+/* --------------------------------------------------
+   API Documentation
+   -------------------------------------------------- */
+// Serve the OpenAPI specification at /api-docs. The spec is defined in
+// backend/api-docs.json and loaded by routes/docs.js. This makes it easy
+// for developers to explore the available endpoints and integrate with
+// the payroll API.
+app.use("/api-docs", docsRouter);
 
 /* --------------------------------------------------
    Metrics cache (🔥 fast path)
