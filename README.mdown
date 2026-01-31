@@ -145,3 +145,26 @@ Fakturering skjer månedlig. Pilot er gratis.
 - Forbedret totalsummer og checksum over input + derived
 
 Kjør testscriptet: `backend/scripts/test_fjordauto.sh`
+
+
+## Database (Postgres)
+
+Sett `DATABASE_URL` for å bruke Postgres. Deretter kjør:
+
+```bash
+cd backend
+npm run db:init
+```
+
+## JWT
+
+I produksjon anbefales:
+
+- `JWT_SECRET=<sterk hemmelighet>`
+- `REQUIRE_JWT=true`
+
+Token må inneholde `role` (f.eks. `employer_admin`).
+
+## NAV/Altinn (stub)
+
+`POST /api/integrations/amelding/{runId}` legger en jobb i kø. Sjekk køen med `GET /api/jobs`.

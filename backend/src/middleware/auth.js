@@ -1,27 +1,30 @@
-/*
- * Optional JWT authentication middleware.
- * If jsonwebtoken or JWT_SECRET is missing, auth is bypassed (safe for early-stage deploy).
- */
-let jwt = null;
-try {
-  jwt = await import('jsonwebtoken');
-} catch (e) {
-  console.warn('jsonwebtoken not installed, auth middleware running in passthrough mode');
+import jwt from "jsonwebtoken";
+
+function requireJwt() {
+  if (process.env.REQUIRE_JWT) return String(process.env.REQUIRE_JWT).toLowerCase() === "true";
+  return String(process.env.NODE_ENV || "").toLowerCase() === "production";
 }
 
 export function authenticate(req, res, next) {
-  if (!jwt || !process.env.JWT_SECRET) {
+  const must = requireJwt();
+  const secret = process.env.JWT_SECRET;
+
+  if (!secret) {
+    if (must) return res.status(500).json({ ok: false, error: "jwt_not_configured" });
     return next();
   }
-  const auth = req.headers['authorization'] || '';
-  if (!auth.startsWith('Bearer ')) {
-    return res.status(401).json({ ok: false, error: 'missing_token' });
+
+  const auth = req.headers["authorization"] || "";
+  if (!auth.startsWith("Bearer ")) {
+    if (must) return res.status(401).json({ ok: false, error: "missing_token" });
+    return next();
   }
-  const token = auth.slice(7);
+
   try {
-    req.user = jwt.default.verify(token, process.env.JWT_SECRET);
-    next();
-  } catch (e) {
-    return res.status(401).json({ ok: false, error: 'invalid_token' });
+    req.user = jwt.verify(auth.slice(7), secret);
+    return next();
+  } catch {
+    if (must) return res.status(401).json({ ok: false, error: "invalid_token" });
+    return next();
   }
 }

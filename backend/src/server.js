@@ -4,6 +4,8 @@ import { enginePayrollRouter } from "./routes/engine.payroll.routes.js";
 import { authenticate } from "./middleware/auth.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { docsRouter } from "./routes/docs.js";
+import { jobsRouter } from "./routes/jobs.routes.js";
+import { integrationsRouter } from "./routes/integrations.routes.js";
 import { rateLimit } from "./middleware/rateLimit.js";
 import { requestId } from "./middleware/requestId.js";
 
@@ -188,6 +190,8 @@ app.use((req, res, next) => {
 // backend/src/routes/engine.payroll.routes.js will be available as
 // /api/payroll-runs, /api/payroll-runs/:id/import, etc.
 app.use("/api", enginePayrollRouter);
+app.use("/api/jobs", jobsRouter);
+app.use("/api/integrations", integrationsRouter);
 
 /* --------------------------------------------------
    API Documentation

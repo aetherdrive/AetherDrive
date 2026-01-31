@@ -3,7 +3,7 @@
   "info": {
     "title": "PayBridge Payroll API",
     "version": "1.0.0",
-    "description": "Denne spesifikasjonen beskriver de eksperimentelle lønnsendepunktene levert av PayBridge-backenden. Hvert endepunkt returnerer JSON og krever at en gyldig integrasjonsnøkkel sendes via X-PAYBRIDGE-KEY-headeren."
+    "description": "Denne spesifikasjonen beskriver de eksperimentelle l\u00f8nnsendepunktene levert av PayBridge-backenden. Hvert endepunkt returnerer JSON og krever at en gyldig integrasjonsn\u00f8kkel sendes via X-PAYBRIDGE-KEY-headeren."
   },
   "paths": {
     "/api/payroll-runs": {
@@ -42,7 +42,11 @@
                     "default": "v1"
                   }
                 },
-                "required": ["period_start", "period_end", "pay_date"]
+                "required": [
+                  "period_start",
+                  "period_end",
+                  "pay_date"
+                ]
               }
             }
           }
@@ -70,7 +74,9 @@
             "name": "id",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -85,10 +91,17 @@
                     "items": {
                       "type": "object",
                       "properties": {
-                        "amount": { "type": "number" },
-                        "line_type": { "type": "string" }
+                        "amount": {
+                          "type": "number"
+                        },
+                        "line_type": {
+                          "type": "string"
+                        }
                       },
-                      "required": ["amount", "line_type"]
+                      "required": [
+                        "amount",
+                        "line_type"
+                      ]
                     }
                   }
                 }
@@ -101,7 +114,9 @@
             "description": "Run updated",
             "content": {
               "application/json": {
-                "schema": { "type": "object" }
+                "schema": {
+                  "type": "object"
+                }
               }
             }
           },
@@ -120,7 +135,9 @@
             "name": "id",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -128,7 +145,9 @@
             "description": "Run totals returned",
             "content": {
               "application/json": {
-                "schema": { "type": "object" }
+                "schema": {
+                  "type": "object"
+                }
               }
             }
           },
@@ -147,7 +166,9 @@
             "name": "id",
             "in": "path",
             "required": true,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "requestBody": {
@@ -157,15 +178,21 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "approver_id": { "type": "string" }
+                  "approver_id": {
+                    "type": "string"
+                  }
                 }
               }
             }
           }
         },
         "responses": {
-          "200": { "description": "Run approved" },
-          "409": { "description": "Invalid operation or run not found" }
+          "200": {
+            "description": "Run approved"
+          },
+          "409": {
+            "description": "Invalid operation or run not found"
+          }
         }
       }
     },
@@ -174,11 +201,22 @@
         "summary": "Commit a payroll run",
         "description": "Locks a run and computes an immutable checksum. Requires status = approved.",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "Run committed" },
-          "409": { "description": "Invalid operation or run not found" }
+          "200": {
+            "description": "Run committed"
+          },
+          "409": {
+            "description": "Invalid operation or run not found"
+          }
         }
       }
     },
@@ -186,11 +224,52 @@
       "get": {
         "summary": "Get reconciliation summary for a payroll run",
         "parameters": [
-          { "name": "id", "in": "path", "required": true, "schema": { "type": "string" } }
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
         ],
         "responses": {
-          "200": { "description": "Reconciliation returned" },
-          "404": { "description": "Run not found" }
+          "200": {
+            "description": "Reconciliation returned"
+          },
+          "404": {
+            "description": "Run not found"
+          }
+        }
+      }
+    },
+    "/api/jobs": {
+      "get": {
+        "summary": "List jobs",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    },
+    "/api/integrations/amelding/{runId}": {
+      "post": {
+        "summary": "Queue a-melding submission",
+        "parameters": [
+          {
+            "name": "runId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Queued"
+          }
         }
       }
     }
