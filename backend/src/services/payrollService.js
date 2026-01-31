@@ -1,235 +1,323 @@
-import fs from 'fs';
-import path from 'path';
-import crypto from 'crypto';
-// Import rule engine helpers. These are used to calculate derived payroll lines
-// such as employer tax and other benefits based on the current rule set.
-import { loadRuleSet, calculateDerivedLines } from '../rules/ruleEngine.js';
+import fs from "fs";
+import path from "path";
+import crypto from "crypto";
+import { loadRuleSet, calculateDerivedLines } from "../rules/ruleEngine.js";
 
-// Optional encryption key for securing payroll data at rest.
-// Set PAYROLL_ENCRYPTION_KEY to a 32+ character string to enable AES-256-CTR
-// encryption of the JSON payload. If the key is missing or too short,
-// payroll data will be stored in plaintext. The IV is prepended to the
-// ciphertext (hex encoded) separated by ':'.
-const PAYROLL_KEY = process.env.PAYROLL_ENCRYPTION_KEY;
-const USE_ENCRYPTION = PAYROLL_KEY && PAYROLL_KEY.length >= 32;
+const RUNS_PATH = path.resolve("data", "payroll_runs.json");
 
-function encryptData(data) {
-  if (!USE_ENCRYPTION) {
-    return JSON.stringify(data, null, 2);
-  }
-  const key = Buffer.from(PAYROLL_KEY.slice(0, 32));
+/**
+ * Optional encryption for at-rest storage.
+ * If PAYROLL_ENCRYPTION_KEY is set (>=32 chars), the JSON payload is encrypted
+ * with AES-256-CTR. This is a pragmatic protection for file-based storage.
+ */
+const ENC_KEY_RAW = process.env.PAYROLL_ENCRYPTION_KEY || null;
+const ENC_KEY =
+  ENC_KEY_RAW && ENC_KEY_RAW.length >= 32
+    ? crypto.createHash("sha256").update(ENC_KEY_RAW).digest()
+    : null;
+
+function encryptData(obj) {
+  const json = JSON.stringify(obj);
+  if (!ENC_KEY) return json;
   const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv('aes-256-ctr', key, iv);
-  const json = JSON.stringify(data);
-  const encrypted = Buffer.concat([cipher.update(json, 'utf8'), cipher.final()]);
-  return iv.toString('hex') + ':' + encrypted.toString('hex');
+  const cipher = crypto.createCipheriv("aes-256-ctr", ENC_KEY, iv);
+  const enc = Buffer.concat([cipher.update(Buffer.from(json, "utf8")), cipher.final()]);
+  // store as iv:hex + ":" + payload:hex
+  return `${iv.toString("hex")}:${enc.toString("hex")}`;
 }
 
-function decryptData(raw) {
-  if (!USE_ENCRYPTION) {
-    return JSON.parse(raw);
-  }
-  const parts = String(raw).split(':');
-  if (parts.length !== 2) {
-    // fall back to plain JSON parsing if the format is unexpected
-    return JSON.parse(raw);
-  }
-  const [ivHex, encHex] = parts;
-  const iv = Buffer.from(ivHex, 'hex');
-  const encrypted = Buffer.from(encHex, 'hex');
-  const key = Buffer.from(PAYROLL_KEY.slice(0, 32));
-  const decipher = crypto.createDecipheriv('aes-256-ctr', key, iv);
-  const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]).toString('utf8');
-  return JSON.parse(decrypted);
+function decryptData(str) {
+  if (!ENC_KEY) return JSON.parse(str || "[]");
+  const [ivHex, payloadHex] = String(str).split(":");
+  if (!ivHex || !payloadHex) return JSON.parse(str || "[]");
+  const iv = Buffer.from(ivHex, "hex");
+  const payload = Buffer.from(payloadHex, "hex");
+  const decipher = crypto.createDecipheriv("aes-256-ctr", ENC_KEY, iv);
+  const dec = Buffer.concat([decipher.update(payload), decipher.final()]);
+  return JSON.parse(dec.toString("utf8") || "[]");
 }
-
-// Path to the JSON file storing payroll runs. The file is in the backend/data directory
-const RUNS_PATH = path.resolve('data', 'payroll_runs.json');
 
 function ensureFile() {
   try {
     fs.accessSync(RUNS_PATH);
   } catch {
-    // Ensure directory exists and create empty array file
     fs.mkdirSync(path.dirname(RUNS_PATH), { recursive: true });
-    // Write an empty encrypted array to initialize the file
-    const initial = encryptData([]);
-    fs.writeFileSync(RUNS_PATH, initial, 'utf8');
+    fs.writeFileSync(RUNS_PATH, encryptData([]), "utf8");
   }
 }
 
-function loadRuns() {
+function readRuns() {
   ensureFile();
-  try {
-    const raw = fs.readFileSync(RUNS_PATH, 'utf8');
-    const data = decryptData(raw);
-    return Array.isArray(data) ? data : [];
-  } catch {
-    return [];
-  }
+  const raw = fs.readFileSync(RUNS_PATH, "utf8") || "[]";
+  return decryptData(raw);
 }
 
-function saveRuns(runs) {
+function writeRuns(runs) {
   ensureFile();
-  const serialized = encryptData(runs);
-  fs.writeFileSync(RUNS_PATH, serialized, 'utf8');
+  fs.writeFileSync(RUNS_PATH, encryptData(runs), "utf8");
 }
 
 function generateId(runs) {
-  // Simple unique identifier: timestamp + count
   const ts = Date.now();
   const count = runs.length + 1;
   return `${ts}_${count}`;
 }
 
-/**
- * Compute a deterministic SHA256 checksum over the input items.
- * Inputs are first normalized (stringified with keys sorted) so that the
- * checksum is independent of property order. If no inputs are provided,
- * returns a fixed value. This checksum can be used to detect whether a
- * run's inputs have changed and to support idempotent commit operations.
- * @param {Array} items
- * @returns {string}
- */
-function computeChecksum(items) {
-  if (!Array.isArray(items) || items.length === 0) {
-    return '0'.repeat(64);
+function assertDate(value, field) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    const err = new Error(`invalid_${field}`);
+    err.status = 422;
+    throw err;
   }
-  const normalized = items
-    .map((obj) => JSON.stringify(Object.keys(obj).sort().reduce((acc, key) => {
-      acc[key] = obj[key];
-      return acc;
-    }, {})))
-    .join('|');
-  const hash = crypto.createHash('sha256');
-  hash.update(normalized);
-  return hash.digest('hex');
 }
 
-export function createRun({ companyId, period_start, period_end, pay_date, currency = 'NOK', rule_set_version = 'v1' }) {
-  const runs = loadRuns();
-  const newRun = {
+function assertMoney(n, field) {
+  if (typeof n !== "number" || !Number.isFinite(n) || n < 0) {
+    const err = new Error(`invalid_${field}`);
+    err.status = 422;
+    throw err;
+  }
+}
+
+function normalizeInputs(items) {
+  if (!Array.isArray(items) || items.length === 0) {
+    const err = new Error("invalid_items");
+    err.status = 422;
+    throw err;
+  }
+  return items.map((it, idx) => {
+    if (!it || typeof it !== "object") {
+      const err = new Error(`invalid_item_${idx}`);
+      err.status = 422;
+      throw err;
+    }
+    const line_type = String(it.line_type || "").trim();
+    if (!line_type) {
+      const err = new Error(`missing_line_type_${idx}`);
+      err.status = 422;
+      throw err;
+    }
+    const amount = Number(it.amount);
+    assertMoney(amount, `amount_${idx}`);
+    const employee = it.employee ? String(it.employee) : null;
+    const meta = it.meta && typeof it.meta === "object" ? it.meta : null;
+    return {
+      employee,
+      line_type,
+      amount,
+      meta,
+      created_at: new Date().toISOString(),
+    };
+  });
+}
+
+function computeChecksum(payload) {
+  // Deterministic checksum for audit/replay: sort lines by (employee,line_type,amount)
+  const lines = (payload?.lines || []).slice().sort((a, b) => {
+    const ea = a.employee || "";
+    const eb = b.employee || "";
+    if (ea !== eb) return ea.localeCompare(eb);
+    if (a.line_type !== b.line_type) return a.line_type.localeCompare(b.line_type);
+    if (a.amount !== b.amount) return a.amount - b.amount;
+    return 0;
+  });
+  const normalized = JSON.stringify(
+    { ...payload, lines },
+    Object.keys({ ...payload, lines }).sort()
+  );
+  return crypto.createHash("sha256").update(normalized).digest("hex");
+}
+
+function findRun(runs, runId) {
+  return runs.find((r) => r.id === runId);
+}
+
+export function createRun({ companyId = 1, period_start, period_end, pay_date, currency = "NOK", rule_set_version = "v1" }) {
+  assertDate(period_start, "period_start");
+  assertDate(period_end, "period_end");
+  assertDate(pay_date, "pay_date");
+
+  const runs = readRuns();
+  const run = {
     id: generateId(runs),
-    company_id: companyId,
+    companyId: Number(companyId) || 1,
     period_start,
     period_end,
     pay_date,
     currency,
     rule_set_version,
-    status: 'draft',
+    status: "draft",
     inputs: [],
-    totals: null,
+    derived: [],
+    totals: {
+      gross_total: 0,
+      withholding_total: 0,
+      employer_tax_total: 0,
+      net_payable: 0,
+    },
     checksum: null,
     created_at: new Date().toISOString(),
-    committed_at: null,
-    approved_by: null
+    updated_at: new Date().toISOString(),
   };
-  runs.push(newRun);
-  saveRuns(runs);
-  return newRun;
+  runs.push(run);
+  writeRuns(runs);
+  return run;
 }
 
-export function addInputs(runId, inputs) {
-  const runs = loadRuns();
-  const run = runs.find((r) => String(r.id) === String(runId));
+export function addInputs(runId, items) {
+  const runs = readRuns();
+  const run = findRun(runs, runId);
   if (!run) return null;
-  // Inputs can only be added to a run that is not yet committed
-  if (!['draft', 'calculated'].includes(run.status)) {
-    return null;
+
+  if (!["draft", "calculated"].includes(run.status)) {
+    const err = new Error("invalid_operation");
+    err.status = 409;
+    throw err;
   }
-  run.inputs = run.inputs || [];
-  const items = Array.isArray(inputs) ? inputs : [];
-  for (const it of items) {
-    run.inputs.push(it);
-  }
-  run.status = 'draft';
-  saveRuns(runs);
+
+  const normalized = normalizeInputs(items);
+  run.inputs = [...(run.inputs || []), ...normalized];
+  run.updated_at = new Date().toISOString();
+  // adding inputs invalidates derived/totals and moves back to draft
+  run.derived = [];
+  run.totals = { gross_total: 0, withholding_total: 0, employer_tax_total: 0, net_payable: 0 };
+  run.status = "draft";
+  writeRuns(runs);
   return run;
 }
 
 export function calculateRun(runId) {
-  const runs = loadRuns();
-  const run = runs.find((r) => String(r.id) === String(runId));
+  const runs = readRuns();
+  const run = findRun(runs, runId);
   if (!run) return null;
-  if (!['draft', 'calculated'].includes(run.status)) {
-    return null;
+
+  if (!["draft", "calculated"].includes(run.status)) {
+    const err = new Error("invalid_operation");
+    err.status = 409;
+    throw err;
   }
+
+  const inputs = Array.isArray(run.inputs) ? run.inputs : [];
+
+  // Totals from inputs
   let gross = 0;
   let withholding = 0;
-  for (const input of run.inputs) {
-    const amount = typeof input.amount === 'number' ? input.amount : 0;
-    if (input.line_type === 'withholding') {
-      withholding += amount;
-    } else {
-      gross += amount;
-    }
+  for (const line of inputs) {
+    if (line.line_type === "withholding") withholding += Number(line.amount) || 0;
+    else gross += Number(line.amount) || 0;
   }
 
-  // Use the rule engine to compute derived lines (e.g. employer tax) based
-  // on the current rule set version. If the specified ruleset is missing,
-  // the rule engine will throw; catch the error and ignore derived lines.
-  let derivedLines = [];
-  let employerTaxTotal = 0;
-  try {
-    const ruleSet = loadRuleSet(run.rule_set_version || 'v1');
-    derivedLines = calculateDerivedLines(run.inputs, ruleSet);
-    employerTaxTotal = derivedLines
-      .filter((it) => it.line_type === 'employer_tax')
-      .reduce((acc, it) => acc + (typeof it.amount === 'number' ? it.amount : 0), 0);
-  } catch (e) {
-    // If ruleset cannot be loaded or applied, continue without derived lines.
-    employerTaxTotal = 0;
-    derivedLines = [];
+  // Derived lines via rule engine
+  const rules = loadRuleSet(run.rule_set_version || "v1");
+  const derived = calculateDerivedLines({ grossTotal: gross, rules }) || [];
+
+  let employerTax = 0;
+  for (const d of derived) {
+    if (d.line_type === "employer_tax") employerTax += Number(d.amount) || 0;
   }
 
-  const totals = {
-    gross_total: gross,
-    withholding_total: withholding,
-    employer_tax_total: employerTaxTotal,
-    input_count: run.inputs.length,
-    derived_count: derivedLines.length
+  const net = gross - withholding;
+
+  run.derived = derived.map((d) => ({
+    employee: d.employee ?? null,
+    line_type: String(d.line_type),
+    amount: Number(d.amount),
+    meta: d.meta ?? null,
+    created_at: new Date().toISOString(),
+  }));
+
+  run.totals = {
+    gross_total: Math.round(gross),
+    withholding_total: Math.round(withholding),
+    employer_tax_total: Math.round(employerTax),
+    net_payable: Math.round(net),
   };
-  run.totals = totals;
-  run.status = 'calculated';
-  saveRuns(runs);
-  return { runId: run.id, totals };
+
+  run.status = "calculated";
+  run.updated_at = new Date().toISOString();
+  writeRuns(runs);
+  return run;
 }
 
-export function approveRun(runId, approverId = null) {
-  const runs = loadRuns();
-  const run = runs.find((r) => String(r.id) === String(runId));
+export function approveRun(runId) {
+  const runs = readRuns();
+  const run = findRun(runs, runId);
   if (!run) return null;
-  // Only allow approval from a calculated run
-  if (run.status !== 'calculated') {
-    return null;
+
+  if (run.status !== "calculated") {
+    const err = new Error("invalid_operation");
+    err.status = 409;
+    throw err;
   }
-  run.status = 'approved';
-  run.approved_by = approverId;
-  saveRuns(runs);
+
+  run.status = "approved";
+  run.updated_at = new Date().toISOString();
+  writeRuns(runs);
   return run;
 }
 
 export function commitRun(runId) {
-  const runs = loadRuns();
-  const run = runs.find((r) => String(r.id) === String(runId));
+  const runs = readRuns();
+  const run = findRun(runs, runId);
   if (!run) return null;
-  // Only allow commit on an approved run
-  if (run.status !== 'approved') {
-    return null;
+
+  if (run.status !== "approved") {
+    const err = new Error("invalid_operation");
+    err.status = 409;
+    throw err;
   }
-  // Compute checksum of current inputs to capture immutable ledger snapshot
-  const checksum = computeChecksum(run.inputs);
-  run.status = 'committed';
-  run.committed_at = new Date().toISOString();
-  run.checksum = checksum;
-  saveRuns(runs);
+
+  const payload = {
+    companyId: run.companyId,
+    period_start: run.period_start,
+    period_end: run.period_end,
+    pay_date: run.pay_date,
+    currency: run.currency,
+    rule_set_version: run.rule_set_version,
+    totals: run.totals,
+    lines: [...(run.inputs || []), ...(run.derived || [])],
+  };
+  run.checksum = computeChecksum(payload);
+  run.status = "committed";
+  run.updated_at = new Date().toISOString();
+  writeRuns(runs);
   return run;
 }
 
 export function reconcileRun(runId) {
-  const runs = loadRuns();
-  const run = runs.find((r) => String(r.id) === String(runId));
+  const runs = readRuns();
+  const run = findRun(runs, runId);
   if (!run) return null;
-  const totals = run.totals || {};
-  return { runId: run.id, status: run.status, totals };
+
+  // Allow reconciliation at any stage, but show status.
+  const lines = [...(run.inputs || []), ...(run.derived || [])];
+  const breakdown = {
+    gross_lines: lines.filter((l) => l.line_type !== "withholding" && l.line_type !== "employer_tax"),
+    withholding_lines: lines.filter((l) => l.line_type === "withholding"),
+    employer_tax_lines: lines.filter((l) => l.line_type === "employer_tax"),
+  };
+
+  return {
+    id: run.id,
+    companyId: run.companyId,
+    period_start: run.period_start,
+    period_end: run.period_end,
+    pay_date: run.pay_date,
+    currency: run.currency,
+    status: run.status,
+    totals: run.totals,
+    checksum: run.checksum,
+    counts: {
+      inputs: (run.inputs || []).length,
+      derived: (run.derived || []).length,
+      total_lines: lines.length,
+    },
+    breakdown_summary: {
+      gross_total: run.totals?.gross_total ?? 0,
+      withholding_total: run.totals?.withholding_total ?? 0,
+      employer_tax_total: run.totals?.employer_tax_total ?? 0,
+      net_payable: run.totals?.net_payable ?? 0,
+    },
+    updated_at: run.updated_at,
+  };
 }

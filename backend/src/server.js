@@ -5,6 +5,7 @@ import { authenticate } from "./middleware/auth.js";
 import { errorHandler } from "./middleware/errorHandler.js";
 import { docsRouter } from "./routes/docs.js";
 import { rateLimit } from "./middleware/rateLimit.js";
+import { requestId } from "./middleware/requestId.js";
 
 import fs from "fs";
 import path from "path";
@@ -151,6 +152,9 @@ const PORT = process.env.PORT || 10000;
 app.disable("x-powered-by");
 app.use(express.json({ limit: "100kb" }));
 
+// Traceability
+app.use(requestId);
+
 // Apply a simple rate limiter to all requests. This helps prevent abuse and
 // accidental overload. Adjust windowMs and max as needed.
 app.use(rateLimit({ windowMs: 10 * 60 * 1000, max: 100 }));
@@ -172,7 +176,7 @@ app.use((req, res, next) => {
   // Content-Type and the integration key header, allow X-User-Role so
   // browsers can send the role for RBAC. You can extend this list with
   // other custom headers as needed.
-  res.set("Access-Control-Allow-Headers", "Content-Type, X-PAYBRIDGE-KEY, X-User-Role, Authorization, X-API-Key");
+  res.set("Access-Control-Allow-Headers", "Content-Type, X-PAYBRIDGE-KEY, X-User-Role, X-Idempotency-Key, X-Request-Id, Authorization, X-API-Key");
   if (req.method === "OPTIONS") return res.sendStatus(204);
   return next();
 });

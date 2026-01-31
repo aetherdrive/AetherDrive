@@ -127,3 +127,21 @@ Denne koden utgjør en referanseimplementasjon (proof‑of‑concept) for en usy
 - Implementere rapportering til NAV/Altinn og betalinger til bank via separate jobbkøer.
 
 For ytterligere dokumentasjon av API-et kan du hente OpenAPI-spesifikasjonen fra `/api-docs` når serveren kjører.
+
+
+## Prising (v1)
+
+- **999 kr / selskap / måned**
+- **20 kr / ansatt / måned**
+
+Fakturering skjer månedlig. Pilot er gratis.
+
+
+## PayBridge v2 – Stabilitet
+
+- Strengere validering (HTTP 422 ved ugyldige felt)
+- Idempotens for POST-kall via `X-Idempotency-Key`
+- `X-Request-Id` på alle svar for feilsøking
+- Forbedret totalsummer og checksum over input + derived
+
+Kjør testscriptet: `backend/scripts/test_fjordauto.sh`
