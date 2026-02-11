@@ -1,0 +1,15 @@
+{
+  "name": "A-melding (draft placeholder)",
+  "version": "draft.v1",
+  "notes": [
+    "Not the official schema.",
+    "Replace with official Altinn/Skatteetaten schema mapping when implementing real submission."
+  ],
+  "fields": {
+    "meta.companyOrgNo": "string",
+    "meta.runId": "string",
+    "meta.periodStart": "YYYY-MM-DD",
+    "meta.periodEnd": "YYYY-MM-DD",
+    "lines[]": "payroll lines"
+  }
+}
