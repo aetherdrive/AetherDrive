@@ -13,6 +13,11 @@ import fs from "fs";
 import path from "path";
 import crypto from "crypto";
 
+import complianceRouter from "./routes/compliance.js";
+import { requestContext } from "./middleware/requestContext.js";
+
+
+
 /* --------------------------------------------------
    Paths & config
 -------------------------------------------------- */
@@ -109,7 +114,11 @@ const INTEGRATION_KEY = process.env.INTEGRATION_KEY || null;
 
 // In secure mode, require an integration key to be provided via environment.
 // If no key is supplied, throw on startup to prevent accidental exposure.
-if (!INTEGRATION_KEY) {
+// In secure mode, require an integration key to be provided via environment.
+// To allow local/pilot testing without a key, set PB_ALLOW_INSECURE_INTEGRATIONS=true (NOT recommended for production).
+const ALLOW_INSECURE_INTEGRATIONS = String(process.env.PB_ALLOW_INSECURE_INTEGRATIONS || "false").toLowerCase() === "true";
+
+if (!INTEGRATION_KEY && !ALLOW_INSECURE_INTEGRATIONS) {
   throw new Error(
     "Missing INTEGRATION_KEY environment variable. Set this to a strong shared secret to allow integration requests."
   );
@@ -154,6 +163,10 @@ const PORT = process.env.PORT || 10000;
 app.disable("x-powered-by");
 app.use(express.json({ limit: "100kb" }));
 
+// Request context (correlation id + audit tracing)
+app.use(requestContext);
+
+
 // Traceability
 app.use(requestId);
 
@@ -165,7 +178,12 @@ app.use(rateLimit({ windowMs: 10 * 60 * 1000, max: 100 }));
 // in the Authorization header and populates req.user. If JWT_SECRET is not
 // configured the middleware will return a 500 error. You can skip this
 // middleware in development by not setting JWT_SECRET.
-app.use(authenticate);
+// Auth: enable JWT only when JWT_SECRET is configured (recommended for production).
+if (process.env.JWT_SECRET) {
+  app.use(authenticate);
+} else {
+  console.warn("JWT_SECRET not set: authentication middleware is disabled (pilot/dev mode).");
+}
 
 /* --------------------------------------------------
    CORS
@@ -182,6 +200,12 @@ app.use((req, res, next) => {
   if (req.method === "OPTIONS") return res.sendStatus(204);
   return next();
 });
+
+
+/* --------------------------------------------------
+   Compliance / Audit (MVP)
+-------------------------------------------------- */
+app.use("/api/compliance", complianceRouter);
 
 /* --------------------------------------------------
    Payroll Engine Routes (experimental)
