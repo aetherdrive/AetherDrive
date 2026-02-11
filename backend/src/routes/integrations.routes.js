@@ -1,11 +1,12 @@
 import express from "express";
 import { requireRole } from "../middleware/authz.js";
+import { requireIntegrationKey } from "../middleware/integrationAuth.js";
 import { queueAmelding } from "../services/altinnService.js";
 import { reconcileRun } from "../services/payrollService.js";
 
 export const integrationsRouter = express.Router();
 
-integrationsRouter.post("/amelding/:runId", requireRole(["employer_admin","accountant"]), async (req,res) => {
+integrationsRouter.post("/amelding/:runId", requireIntegrationKey, requireRole(["employer_admin","accountant"]), async (req,res) => {
   const runId = req.params.runId;
   const report = await reconcileRun(runId);
   if (!report) return res.status(404).json({ ok: false, error: "run_not_found" });

@@ -130,7 +130,7 @@ export async function calculateRun(runId) {
   }
 
   const rules = loadRuleSet(run.rule_set_version || "v1");
-  const derived = calculateDerivedLines({ grossTotal: gross, rules }) || [];
+  const derived = calculateDerivedLines(inputs, rules) || [];
   let employerTax = 0;
   for (const d of derived) if (d.line_type === "employer_tax") employerTax += Number(d.amount) || 0;
 

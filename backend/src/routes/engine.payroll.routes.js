@@ -9,6 +9,7 @@ import {
 } from "../services/payrollService.js";
 
 import { requireRole } from "../middleware/authz.js";
+import { requireIntegrationKey } from "../middleware/integrationAuth.js";
 import { hashRequestBody, checkIdempotency, storeIdempotency } from "../services/idempotencyService.js";
 
 export const enginePayrollRouter = express.Router();
@@ -41,14 +42,15 @@ function storeIdem(req, endpoint, response, status=200) {
 // Create a new payroll run
 enginePayrollRouter.post(
   "/payroll-runs",
+  requireIntegrationKey,
   requireRole(["employer_admin", "accountant"]),
-  (req, res) => {
+  async (req, res) => {
     try {
       const idem = maybeServeIdempotent(req, res, "POST /payroll-runs");
       if (idem) return;
 
       const { period_start, period_end, pay_date, currency, company_id, rule_set_version } = req.body || {};
-      const run = createRun({
+      const run = await createRun({
         companyId: company_id ?? 1,
         period_start,
         period_end,
@@ -69,15 +71,16 @@ enginePayrollRouter.post(
 // Import payroll inputs
 enginePayrollRouter.post(
   "/payroll-runs/:id/import",
+  requireIntegrationKey,
   requireRole(["employer_admin", "accountant"]),
-  (req, res) => {
+  async (req, res) => {
     try {
       const idem = maybeServeIdempotent(req, res, "POST /payroll-runs/:id/import");
       if (idem) return;
 
       const runId = req.params.id;
       const items = req.body?.items ?? req.body;
-      const updated = addInputs(runId, items);
+      const updated = await addInputs(runId, items);
       if (!updated) return res.status(404).json({ ok: false, error: "run_not_found" });
 
       const response = { ok: true, run: updated };
@@ -92,11 +95,12 @@ enginePayrollRouter.post(
 // Calculate a payroll run
 enginePayrollRouter.post(
   "/payroll-runs/:id/calculate",
+  requireIntegrationKey,
   requireRole(["employer_admin", "accountant"]),
-  (req, res) => {
+  async (req, res) => {
     try {
       const runId = req.params.id;
-      const updated = calculateRun(runId);
+      const updated = await calculateRun(runId);
       if (!updated) return res.status(404).json({ ok: false, error: "run_not_found" });
       return res.json({ ok: true, run: updated });
     } catch (err) {
@@ -108,11 +112,12 @@ enginePayrollRouter.post(
 // Approve a payroll run
 enginePayrollRouter.post(
   "/payroll-runs/:id/approve",
+  requireIntegrationKey,
   requireRole(["employer_admin", "accountant"]),
-  (req, res) => {
+  async (req, res) => {
     try {
       const runId = req.params.id;
-      const updated = approveRun(runId);
+      const updated = await approveRun(runId);
       if (!updated) return res.status(404).json({ ok: false, error: "run_not_found" });
       return res.json({ ok: true, run: updated });
     } catch (err) {
@@ -124,11 +129,12 @@ enginePayrollRouter.post(
 // Commit a payroll run (locks it)
 enginePayrollRouter.post(
   "/payroll-runs/:id/commit",
+  requireIntegrationKey,
   requireRole(["employer_admin", "accountant"]),
-  (req, res) => {
+  async (req, res) => {
     try {
       const runId = req.params.id;
-      const updated = commitRun(runId);
+      const updated = await commitRun(runId);
       if (!updated) return res.status(404).json({ ok: false, error: "run_not_found" });
       return res.json({ ok: true, run: updated });
     } catch (err) {
@@ -140,11 +146,12 @@ enginePayrollRouter.post(
 // Reconcile a payroll run
 enginePayrollRouter.get(
   "/payroll-runs/:id/reconciliation",
+  requireIntegrationKey,
   requireRole(["employer_admin", "accountant"]),
-  (req, res) => {
+  async (req, res) => {
     try {
       const runId = req.params.id;
-      const report = reconcileRun(runId);
+      const report = await reconcileRun(runId);
       if (!report) return res.status(404).json({ ok: false, error: "run_not_found" });
       return res.json({ ok: true, report });
     } catch (err) {

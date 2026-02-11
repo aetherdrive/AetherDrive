@@ -8,6 +8,11 @@ import { jobsRouter } from "./routes/jobs.routes.js";
 import { integrationsRouter } from "./routes/integrations.routes.js";
 import { rateLimit } from "./middleware/rateLimit.js";
 import { requestId } from "./middleware/requestId.js";
+import {
+  assertIntegrationConfiguration,
+  getIntegrationKey,
+  requireIntegrationKey,
+} from "./middleware/integrationAuth.js";
 
 import fs from "fs";
 import path from "path";
@@ -110,28 +115,8 @@ function saveImportStatus(status) {
 
 const INTEGRATION_ENDPOINT =
   process.env.INTEGRATION_ENDPOINT || "https://aetherdrive.onrender.com/api/metrics";
-const INTEGRATION_KEY = process.env.INTEGRATION_KEY || null;
-
-// In secure mode, require an integration key to be provided via environment.
-// If no key is supplied, throw on startup to prevent accidental exposure.
-// In secure mode, require an integration key to be provided via environment.
-// To allow local/pilot testing without a key, set PB_ALLOW_INSECURE_INTEGRATIONS=true (NOT recommended for production).
-const ALLOW_INSECURE_INTEGRATIONS = String(process.env.PB_ALLOW_INSECURE_INTEGRATIONS || "false").toLowerCase() === "true";
-
-if (!INTEGRATION_KEY && !ALLOW_INSECURE_INTEGRATIONS) {
-  throw new Error(
-    "Missing INTEGRATION_KEY environment variable. Set this to a strong shared secret to allow integration requests."
-  );
-}
-
-function requireIntegrationKey(req, res) {
-  const key = req.header("X-PAYBRIDGE-KEY") || "";
-  if (key !== INTEGRATION_KEY) {
-    res.status(401).json({ ok: false, error: "unauthorized" });
-    return false;
-  }
-  return true;
-}
+const INTEGRATION_KEY = getIntegrationKey();
+assertIntegrationConfiguration();
 
 function isValidEvent(e) {
   if (!e || typeof e !== "object") return false;
@@ -315,9 +300,7 @@ app.get("/api/integration", (req, res) => {
    Time events routes (unchanged)
 -------------------------------------------------- */
 
-app.post("/api/time-events/import", (req, res) => {
-  if (!requireIntegrationKey(req, res)) return;
-
+app.post("/api/time-events/import", requireIntegrationKey, (req, res) => {
   const body = normalizeJsonBody(req.body);
   const source = String(body.source || "unknown");
   const events = Array.isArray(body.events) ? body.events : [];
