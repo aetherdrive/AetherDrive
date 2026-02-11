@@ -277,7 +277,7 @@ setInterval(() => {
 -------------------------------------------------- */
 
 app.get("/", (req, res) => {
-  res.send("AetherDrive backend is running 🚀");
+  res.send("AetherDrive backend is running 🚀mvh marcus andre nilsen");
 });
 
 app.get("/health", (req, res) => {
