@@ -1,0 +1,41 @@
+{
+  "status": "Engine running",
+  "users": 2,
+  "monthlyRevenueNOK": 200000,
+  "currency": "NOK",
+  "employees": [
+    {
+      "name": "Alice",
+      "jobCount": 1,
+      "currentSalary": 670048
+    },
+    {
+      "name": "Bob",
+      "jobCount": 2,
+      "currentSalary": 685701
+    }
+  ],
+  "importStatus": {
+    "lastImportAt": "2026-02-13T11:55:00.000Z",
+    "accepted": 10,
+    "duplicates": 1,
+    "rejected": 0
+  },
+  "explain": {
+    "generatedAt": "2026-02-13T12:00:00.000Z",
+    "policyUsed": {
+      "version": "golden-1",
+      "timezone": "UTC",
+      "currency": "NOK",
+      "raiseModel": "COMPOUND_ANNUAL",
+      "anniversaryUTC": true,
+      "salaryRounding": "NEAREST_INT",
+      "detailLevel": "TOTALS"
+    },
+    "inputs": {
+      "employees": 2,
+      "jobs": 3
+    }
+  },
+  "generatedAt": "2026-02-13T12:00:00.000Z"
+}

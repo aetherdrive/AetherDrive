@@ -1,0 +1,34 @@
+{
+  "version": "golden-1",
+  "locale": {
+    "timezone": "UTC",
+    "currency": "NOK"
+  },
+  "payroll": {
+    "raiseModel": "COMPOUND_ANNUAL",
+    "raiseAnniversary": {
+      "useUTC": true
+    },
+    "rounding": {
+      "salary": {
+        "mode": "NEAREST_INT"
+      }
+    }
+  },
+  "metrics": {
+    "detailLevel": "TOTALS",
+    "monthlyRevenue": {
+      "source": "FIXED",
+      "fixedValue": 200000
+    }
+  },
+  "importStatus": {
+    "source": "SIMULATED",
+    "simulated": {
+      "minutesAgo": 5,
+      "accepted": 10,
+      "duplicates": 1,
+      "rejected": 0
+    }
+  }
+}

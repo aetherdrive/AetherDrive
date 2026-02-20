@@ -1,0 +1,16 @@
+{
+  "status": "committed",
+  "currency": "NOK",
+  "totals": {
+    "gross_total": 1000,
+    "withholding_total": 0,
+    "employer_tax_total": 71,
+    "net_payable": 1000
+  },
+  "checksum": "ea2dffe1f2008ca95f021cb6df9dab76b849fd05684d928ee4694a3ff4f0ce78",
+  "counts": {
+    "inputs": 2,
+    "derived": 1,
+    "total_lines": 3
+  }
+}

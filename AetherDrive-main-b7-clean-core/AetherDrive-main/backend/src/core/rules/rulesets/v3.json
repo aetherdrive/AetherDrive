@@ -1,0 +1,44 @@
+{
+  "rule_set": "NO",
+  "version": "v3",
+  "currency": "NOK",
+  "policy": {
+    "rounding": "integer",
+    "input_constraints": {
+      "allowed_line_types": [
+        "wage",
+        "withholding",
+        "adjustment"
+      ],
+      "allow_negative_line_types": [
+        "withholding",
+        "adjustment"
+      ]
+    },
+    "derived_rules": [
+      {
+        "name": "employer_tax_piecewise_demo",
+        "type": "threshold_piecewise_percentage",
+        "out_line_type": "employer_tax",
+        "threshold_amount": 1000,
+        "rate_below": 0.1,
+        "rate_above": 0.2
+      },
+      {
+        "name": "pension_by_employee_type_demo",
+        "type": "per_employee_percentage_of_gross",
+        "out_line_type": "pension",
+        "rate_by_employee_type": {
+          "default": 0.02,
+          "contractor": 0.0,
+          "employee": 0.03
+        }
+      }
+    ]
+  },
+  "meta": {
+    "country": "Norway",
+    "effective_from": "2026-01-01",
+    "description": "Ruleset v3 (thresholds + per-employee derived lines)"
+  }
+}

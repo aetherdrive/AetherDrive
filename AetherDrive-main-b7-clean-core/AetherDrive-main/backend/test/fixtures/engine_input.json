@@ -1,0 +1,32 @@
+{
+  "employees": [
+    {
+      "name": "Alice",
+      "jobs": [
+        {
+          "title": "Engineer",
+          "baseSalary": 500000,
+          "annualIncrease": 0.05,
+          "startDate": "2020-02-13"
+        }
+      ]
+    },
+    {
+      "name": "Bob",
+      "jobs": [
+        {
+          "title": "Analyst",
+          "baseSalary": 400000,
+          "annualIncrease": 0.03,
+          "startDate": "2019-03-01"
+        },
+        {
+          "title": "Consultant",
+          "baseSalary": 200000,
+          "annualIncrease": 0.02,
+          "startDate": "2023-06-15"
+        }
+      ]
+    }
+  ]
+}

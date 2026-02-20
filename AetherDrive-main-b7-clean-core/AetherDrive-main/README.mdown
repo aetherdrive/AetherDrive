@@ -1,0 +1,213 @@
+# PayBridge – den usynlige lønnsmotoren
+
+- Backend: Node.js + Express (HR, lønn, lønnsøkning, metrics) med integrert regelmotor
+- Frontend: statisk HTML for enklere administrasjon (kan byttes med moderne rammeverk)
+- AI microservice: Flask/FastAPI for avviksforklaringer (kan utvides)
+- Klar for Render‑deploy (backend, frontend, AI-service) og kan kjøres lokalt eller på Starlink‑node
+
+## Konfigurasjon
+
+Før du starter backend-tjenesten må du definere noen miljøvariabler. Du kan kopiere `.env.example` til `.env` og fylle inn egne verdier:
+
+| Variabel | Beskrivelse |
+|---------|-------------|
+| `PORT` | Hvilken port Express-serveren skal lytte på (default 10000). |
+| `INTEGRATION_KEY` | En sterk delt hemmelighet som brukes til å autentisere integrasjonskall via headeren `X-PAYBRIDGE-KEY`. **Påkrevd i produksjon**. |
+| `PAYROLL_ENCRYPTION_KEY` | En 32-tegns nøkkel som aktiverer AES‑256‑CTR-kryptering av lønnsdata på disken. Uten denne nøkkelen lagres data i klartekst. |
+| `INTEGRATION_ENDPOINT` | Opsjonell URL for metrics-integrasjon. |
+| `DATABASE_URL` | Postgres‑tilkoblingsstreng. Hvis satt kobles backend til en database i stedet for lokal JSON‑lagring. |
+| `CORS_ORIGINS` | Komma-separert liste av tillatte frontend-origins (f.eks. `https://...`). |
+| `ENGINE_VERSION` | Valgfri versjonsstreng som lagres på payroll-runs (for audit/replay). |
+| `BOOTSTRAP_API_KEY` | Kun for engangs-bootstrapping: plaintext API-key som hashes (lagres aldri i DB). |
+| `JWT_SECRET` | Hemmelig nøkkel som brukes til å signere og verifisere JWT‑tokens for autentisering. Påkrevd hvis du aktiverer auth-middleware. |
+
+## Sikkerhet og rollebasert tilgang (RBAC)
+
+Alle endepunkter i `backend/src/routes/engine.payroll.routes.js` er beskyttet av to mekanismer:
+
+1. **Integrasjonsnøkkel** – Hver forespørsel mot API-et må inkludere headeren `X-PAYBRIDGE-KEY` med verdien du har satt i miljøvariabelen `INTEGRATION_KEY`. Hvis denne hemmeligheten mangler eller er feil, returnerer serveren HTTP 401. Dette hindrer uautorisert bruk av API-et over internett.
+
+2. **Rolle** – For å kontrollere hvem som kan opprette, importere, beregne og låse lønnskjøringer, må du sende headeren `X-User-Role` med en av de tillatte rollene: `employer_admin` eller `accountant`. Alle andre verdier (eller fravær av headeren) fører til HTTP 403 `forbidden`. I et produksjonssystem vil du typisk hente rollen fra et autentiseringstoken i stedet for en løs header, men i denne referanseimplementasjonen holder vi det enkelt.
+
+Headeren `X-User-Role` er også lagt til i CORS‑konfigurasjonen slik at nettlesere kan sende den fra frontenden uten å bli blokkert.
+
+## Bruk av API-et
+
+### B2B embedded mode (Postgres + RLS)
+
+Når `DATABASE_URL` er satt, brukes en multi-tenant Postgres-modell med Row Level Security (RLS).
+Da må alle payroll- og time-events kall også inkludere:
+
+- `X-API-Key: <plaintext API key>` (brukes kun til å finne org_id, lagres aldri i DB)
+
+For å klargjøre én org i en tom DB:
+
+```bash
+cd backend
+npm run db:init
+BOOTSTRAP_API_KEY="..." BOOTSTRAP_ORG_NAME="Demo" npm run db:bootstrap
+```
+
+Sjekk driftstilstand:
+
+- `GET /health/db`
+
+### Opprett lønnskjøring
+
+```
+POST /api/payroll-runs
+Headers:
+  X-PAYBRIDGE-KEY: <din hemmelige nøkkel>
+  X-User-Role: employer_admin
+Content-Type: application/json
+
+Body:
+{
+  "company_id": 1,
+  "period_start": "2026-01-01",
+  "period_end": "2026-01-31",
+  "pay_date": "2026-02-05",
+  "currency": "NOK",
+  "rule_set_version": "v1"
+}
+```
+
+Dette endepunktet oppretter en ny lønnskjøring i status `draft`. Datoene må være gyldige ISO‑8601‑strenger og overholde rekkefølgen: `period_start` ≤ `period_end` ≤ `pay_date`. Du kan utelate `company_id` for å bruke standardverdien `1`.
+
+### Importer lønnsgrunnlag
+
+```
+POST /api/payroll-runs/{runId}/import
+Headers:
+  X-PAYBRIDGE-KEY: <din nøkkel>
+  X-User-Role: employer_admin
+Content-Type: application/json
+
+Body:
+{
+  "items": [
+    { "line_type": "salary", "amount": 48000 },
+    { "line_type": "withholding", "amount": 12000 }
+  ]
+}
+```
+
+Dette endepunktet legger inn lønns- og trekkposter i kjøringen så lenge statusen er `draft` eller `calculated`. Hver post må ha `line_type` (string) og `amount` (tall). Ugyldige elementer avvises med HTTP 400.
+
+### Beregn (tørkjør) lønn
+
+```
+POST /api/payroll-runs/{runId}/calculate
+Headers:
+  X-PAYBRIDGE-KEY: <din nøkkel>
+  X-User-Role: employer_admin
+```
+
+Serveren summerer brutto og trekk og returnerer totalsummer. Du kan kjøre dette flere ganger; statusen settes til `calculated` hver gang.
+
+### Godkjenn og lås lønnen
+
+```
+POST /api/payroll-runs/{runId}/approve
+POST /api/payroll-runs/{runId}/commit
+```
+
+Du må først godkjenne en kjøring i status `calculated`, deretter kan du kommitte den for å gjøre ledgeren uforanderlig. Under `commit` beregnes en SHA256‑checksum av inngangsdataene for å sikre integritet. Ved idempotent gjenkalling av `commit` skjer ingen duplisering; systemet vil oppdage at statusen allerede er `committed` og returnere HTTP 409.
+
+### Avstemming
+
+```
+GET /api/payroll-runs/{runId}/reconciliation
+```
+
+Gir en enkel rapport over brutto, trekk og status for en kjøring. Etter at betalingen er implementert kan du utvide denne rapporten til å inkludere faktisk utbetaling.
+
+## Sikkerhetsfunksjoner
+
+- **AES‑256‑kryptering:** Hvis du setter `PAYROLL_ENCRYPTION_KEY` i miljøet, lagres payroll‑ledgeren kryptert på disk. Nøkkelen må være minst 32 tegn lang.
+- **Rate limiting:** Alle forespørsler begrenses i minnet til maks 100 per 10 minutter per IP. Forsøk over dette returnerer HTTP 429.
+- **Idempotens og sjekksum:** Statusmaskinen forhindrer at en handling (import, beregning, godkjenning, commit) utføres i feil rekkefølge. Ved commit genereres en sjekksum over alle inputposter slik at du senere kan verifisere at dataene ikke er endret.
+- **Audit og migrasjoner:** Prosjektet inkluderer SQL‑migrasjoner i `backend/db/migrations` for å støtte en fremtidig overgang til Postgres og immutabel audit-logg.
+
+## Starlink‑modus og offline jobbkø
+
+For enkelte installasjoner kan du ha behov for å kjøre lønnsmotoren på en node med begrenset eller uforutsigbar nettverksforbindelse – for eksempel over en Starlink‑forbindelse eller i et feltkontor. I slike tilfeller ønsker du at tidskritiske operasjoner som a‑melding og utbetaling **ikke går tapt** dersom nettet faller ut. Systemet har derfor støtte for en enkel offline jobbkø:
+
+- **RUN_MODE=starlink:** I `.env` kan du sette `RUN_MODE=starlink` for å signalisere at motoren skal være tolerant mot nettverksbrudd. Når denne modusen er aktivert vil du typisk lagre eksterne handlinger (som innsending til Altinn eller bank) som jobber i en lokal kø i stedet for å forsøke umiddelbart. Når forbindelsen er tilbake dreneres køen og oppgavene sendes.
+- **queueService:** Modulen `backend/src/services/queueService.js` implementerer en grunnleggende in‑memory kø med funksjonene `enqueue(task)`, `drain(handler)` og `pending()`. Du kan utvide denne til å persistere køen til disk når du kjører i Starlink‑modus (f.eks. skrive til en JSON‑fil) slik at jobber overlever omstart og nettverksbrudd. Dette er et startpunkt som demonstrerer prinsippet – i produksjon bør du bruke et robust køsystem som Redis/Bull.
+- **Robusthet over romantikk:** Selv om Starlink kan gi stabil internettforbindelse på avsidesliggende steder, garanterer ingen teknologi 100 % oppetid. Ved å behandle eksterne kall som asynkrone jobber, sikrer du at systemet fortsatt fungerer når forbindelsen faller ut og at ingenting går tapt når den gjenopprettes.
+
+Ved å kombinere `RUN_MODE=starlink` og offline jobbkø får du en motor som er robust mot midlertidige avbrudd i strøm eller internett og som enkelt kan «ta igjen» det tapte når forbindelsen er tilbake.
+
+## Videre arbeid
+
+Denne koden utgjør en referanseimplementasjon (proof‑of‑concept) for en usynlig lønnsmotor. For produksjonsbruk bør du:
+
+- Erstatte JSON‑lagringen med en database (f.eks. Postgres) og kjøre migrasjonene i `backend/db/migrations`.
+- Integrere autentisering (OAuth/JWT) i stedet for å basere deg på `X-User-Role`.
+- Bygge en regelmotor for skatter og ytelser som kan versjoneres via feltet `rule_set_version`.
+- Implementere rapportering til NAV/Altinn og betalinger til bank via separate jobbkøer.
+
+For ytterligere dokumentasjon av API-et kan du hente OpenAPI-spesifikasjonen fra `/api-docs` når serveren kjører.
+
+
+## Prising (v1)
+
+- **999 kr / selskap / måned**
+- **20 kr / ansatt / måned**
+
+Fakturering skjer månedlig. Pilot er gratis.
+
+
+## PayBridge v2 – Stabilitet
+
+- Strengere validering (HTTP 422 ved ugyldige felt)
+- Idempotens for POST-kall via `X-Idempotency-Key`
+- `X-Request-Id` på alle svar for feilsøking
+- Forbedret totalsummer og checksum over input + derived
+
+Kjør testscriptet: `backend/scripts/test_fjordauto.sh`
+
+
+## Database (Postgres)
+
+Sett `DATABASE_URL` for å bruke Postgres. Deretter kjør:
+
+```bash
+cd backend
+npm run db:init
+```
+
+### Bootstrap (org + API key)
+
+Time‑events endepunktene bruker multi‑tenant RLS. For å kunne skrive/lese data må du ha minst én `organization`
+og én `api_key` (kun hash lagres).
+
+**Alternativ A (anbefalt):** kjør bootstrap-scriptet som DB-eier:
+
+```bash
+cd backend
+export BOOTSTRAP_API_KEY='din-plaintext-nøkkel'
+export BOOTSTRAP_ORG_NAME='Demo Org'
+export BOOTSTRAP_ORG_ID='00000000-0000-0000-0000-000000000001'
+npm run db:bootstrap
+```
+
+**Alternativ B:** bruk `backend/db/bootstrap.sql` og fyll inn SHA256-hashen manuelt.
+
+Når dette er gjort, kall `POST /api/time-events/import` med headers:
+- `X-PAYBRIDGE-KEY: <INTEGRATION_KEY>`
+- `X-API-Key: <plaintext API key (BOOTSTRAP_API_KEY)>`
+
+## JWT
+
+I produksjon anbefales:
+
+- `JWT_SECRET=<sterk hemmelighet>`
+- `REQUIRE_JWT=true`
+
+Token må inneholde `role` (f.eks. `employer_admin`).
+
+## NAV/Altinn (stub)
+
+`POST /api/integrations/amelding/{runId}` legger en jobb i kø. Sjekk køen med `GET /api/jobs`.

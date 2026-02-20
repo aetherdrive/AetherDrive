@@ -1,0 +1,33 @@
+{
+  "rule_set": "NO",
+  "version": "v2",
+  "currency": "NOK",
+  "policy": {
+    "rounding": "integer",
+    "input_constraints": {
+      "allowed_line_types": [
+        "wage",
+        "withholding",
+        "adjustment"
+      ],
+      "allow_negative_line_types": [
+        "withholding",
+        "adjustment"
+      ]
+    },
+    "derived_rules": [
+      {
+        "name": "employer_tax_capped",
+        "type": "percentage_of_gross_with_cap",
+        "out_line_type": "employer_tax",
+        "rate": 0.141,
+        "cap_amount": 500
+      }
+    ]
+  },
+  "meta": {
+    "country": "Norway",
+    "effective_from": "2026-01-01",
+    "description": "Norway ruleset v2 (adds derived_rules + input constraints + caps)"
+  }
+}

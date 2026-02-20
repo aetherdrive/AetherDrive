@@ -1,0 +1,27 @@
+{
+  "name": "paybridge-backend",
+  "version": "3.0.0",
+  "type": "module",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "db:init": "node src/db/initDb.js",
+    "db:bootstrap": "node src/db/bootstrapOrg.js",
+    "lint": "eslint .",
+    "format": "prettier -w .",
+    "test": "node --test",
+    "test:golden": "node --test test/golden/*.test.js",
+    "test:integration": "node --test test/integration/*.test.js test/golden/payrollRun.postgres.golden.test.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.12.0",
+    "helmet": "^7.1.0"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.9.0",
+    "eslint": "^9.9.0",
+    "prettier": "^3.3.3"
+  }
+}

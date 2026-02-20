@@ -1,0 +1,22 @@
+{
+  "run": {
+    "companyId": 1,
+    "period_start": "2026-01-01",
+    "period_end": "2026-01-31",
+    "pay_date": "2026-02-05",
+    "currency": "NOK",
+    "rule_set_version": "v2"
+  },
+  "inputs": [
+    {
+      "employee": "E1",
+      "line_type": "wage",
+      "amount": 1000
+    },
+    {
+      "employee": "E1",
+      "line_type": "withholding",
+      "amount": 0
+    }
+  ]
+}
