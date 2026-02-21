@@ -1,5 +1,5 @@
 // middleware/requestContext.js (ESM)
-import { newRequestId } from "../utils/ids.js";
+import { newRequestId } from "../../utils/ids.js";
 
 export function requestContext(req, res, next) {
   const requestId = req.header("X-Request-Id") || newRequestId();
