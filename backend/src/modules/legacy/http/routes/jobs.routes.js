@@ -1,6 +1,6 @@
 import express from "express";
-import { requireRole } from "../../../infra/middleware/authz.js";
-import { requireIntegrationKey } from "../../../infra/middleware/integrationAuth.js";
+import { requireRole } from "../../../../infra/middleware/authz.js";
+import { requireIntegrationKey } from "../../../../infra/middleware/integrationAuth.js";
 import { listJobs } from "../../services/jobQueueService.js";
 
 export const jobsRouter = express.Router();

@@ -2,7 +2,7 @@ import express from "express";
 import fs from "fs";
 import path from "path";
 
-import engine from "../../../core/engine.js";
+import engine from "../../../../core/engine.js";
 
 const POLICY_PATH = path.resolve("config/policy.json");
 let policy = null;

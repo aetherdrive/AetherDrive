@@ -1,6 +1,6 @@
 // routes/compliance.js (ESM)
 import express from "express";
-import { readLastEvents } from "../../../domain/auditService.js";
+import { readLastEvents } from "../../../../domain/auditService.js";
 
 const router = express.Router();
 
